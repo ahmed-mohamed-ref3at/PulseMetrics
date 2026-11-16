@@ -44,7 +44,7 @@ void cJSON_Delete(cJSON *c) {
 }
 
 static const char *skip(const char *in) {
-    while (in && *in && ((unsigned char)*in <= 32)) in++;
+    while (in && (*in==' ' || *in=='\t' || *in=='\r' || *in=='\n')) in++;
     return in;
 }
 
@@ -55,54 +55,66 @@ static const char *parse_array(cJSON *item, const char *value);
 static const char *parse_object(cJSON *item, const char *value);
 
 static const char *parse_number(cJSON *item, const char *num) {
+    const char *p=num;
+    if(*p=='-')p++;
+    if(*p=='0')p++;
+    else {if(*p<'1'||*p>'9')return NULL;while(*p>='0'&&*p<='9')p++;}
+    if(*p=='.'){p++;if(*p<'0'||*p>'9')return NULL;while(*p>='0'&&*p<='9')p++;}
+    if(*p=='e'||*p=='E'){p++;if(*p=='+'||*p=='-')p++;if(*p<'0'||*p>'9')return NULL;while(*p>='0'&&*p<='9')p++;}
     double n = 0;
     char *endptr = NULL;
     n = strtod(num, &endptr);
-    if (endptr == num) return NULL;
+    if (endptr == num || endptr != p || !isfinite(n)) return NULL;
     item->valuedouble = n;
-    item->valueint = (int)n;
+    item->valueint = n >= INT_MAX ? INT_MAX : n <= INT_MIN ? INT_MIN : (int)n;
     item->type = cJSON_Number;
     return endptr;
 }
 
+/* V2 safety patch to the received compact cJSON adaptation: bounded escapes/UTF-8. */
+static unsigned hex4(const char *s) {
+    unsigned n=0;
+    for(int i=0;i<4;i++) {
+        unsigned char c=(unsigned char)s[i]; unsigned x;
+        if(c>='0'&&c<='9')x=c-'0';else if(c>='a'&&c<='f')x=c-'a'+10;
+        else if(c>='A'&&c<='F')x=c-'A'+10;else return 0xffffffffu;
+        n=(n<<4)|x;
+    }
+    return n;
+}
 static const char *parse_string(cJSON *item, const char *str) {
-    const char *ptr = str + 1;
-    char *ptr2;
-    char *out;
-    int len = 0;
-    if (*str != '\"') return NULL;
-
-    while (*ptr != '\"' && *ptr && ++len) {
-        if (*ptr++ == '\\') ptr++;
+    if(!str || *str!='"') return NULL;
+    const char *end=str+1;
+    while(*end && *end!='"') {
+        if((unsigned char)*end<32)return NULL;
+        if(*end=='\\') {end++;if(!*end)return NULL;}
+        end++;
     }
-
-    out = (char*)cJSON_malloc(len + 1);
-    if (!out) return NULL;
-
-    ptr = str + 1;
-    ptr2 = out;
-    while (*ptr != '\"' && *ptr) {
-        if (*ptr != '\\') {
-            *ptr2++ = *ptr++;
-        } else {
-            ptr++;
-            switch (*ptr) {
-                case 'b': *ptr2++ = '\b'; break;
-                case 'f': *ptr2++ = '\f'; break;
-                case 'n': *ptr2++ = '\n'; break;
-                case 'r': *ptr2++ = '\r'; break;
-                case 't': *ptr2++ = '\t'; break;
-                case '\"': case '\\': case '/': *ptr2++ = *ptr; break;
-                default: *ptr2++ = *ptr; break;
-            }
-            ptr++;
-        }
+    if(*end!='"')return NULL;
+    char *out=cJSON_malloc((size_t)(end-str)+1);if(!out)return NULL;
+    char *q=out;const char *p=str+1;
+    while(p<end) {
+        if(*p!='\\'){*q++=*p++;continue;}
+        p++;char ch=*p++;
+        if(ch=='"'||ch=='\\'||ch=='/')*q++=ch;
+        else if(ch=='n')*q++='\n';else if(ch=='r')*q++='\r';else if(ch=='t')*q++='\t';
+        else if(ch=='b')*q++='\b';else if(ch=='f')*q++='\f';
+        else if(ch=='u') {
+            if(end-p<4)goto bad;
+            unsigned cp=hex4(p);p+=4;if(cp==0xffffffffu||cp==0)goto bad;
+            if(cp>=0xd800&&cp<=0xdbff) {
+                if(end-p<6||p[0]!='\\'||p[1]!='u')goto bad;
+                unsigned low=hex4(p+2);p+=6;if(low<0xdc00||low>0xdfff)goto bad;
+                cp=0x10000+((cp-0xd800)<<10)+(low-0xdc00);
+            } else if(cp>=0xdc00&&cp<=0xdfff)goto bad;
+            if(cp<128)*q++=(char)cp;
+            else if(cp<2048){*q++=(char)(0xc0|(cp>>6));*q++=(char)(0x80|(cp&63));}
+            else if(cp<65536){*q++=(char)(0xe0|(cp>>12));*q++=(char)(0x80|((cp>>6)&63));*q++=(char)(0x80|(cp&63));}
+            else{*q++=(char)(0xf0|(cp>>18));*q++=(char)(0x80|((cp>>12)&63));*q++=(char)(0x80|((cp>>6)&63));*q++=(char)(0x80|(cp&63));}
+        } else goto bad;
     }
-    *ptr2 = 0;
-    if (*ptr == '\"') ptr++;
-    item->valuestring = out;
-    item->type = cJSON_String;
-    return ptr;
+    *q=0;item->valuestring=out;item->type=cJSON_String;return end+1;
+bad:cJSON_free(out);return NULL;
 }
 
 static const char *parse_array(cJSON *item, const char *value) {
@@ -186,11 +198,26 @@ cJSON *cJSON_Parse(const char *value) {
 }
 
 cJSON *cJSON_ParseWithLength(const char *value, size_t buffer_length) {
-    (void)buffer_length;
+    if (!value || !buffer_length || strlen(value) != buffer_length) return NULL;
+    int depth=0; int quoted=0; int escaped=0;
+    for (size_t i=0;i<buffer_length;i++) {
+        unsigned char ch=(unsigned char)value[i];
+        if (quoted) {
+            if (escaped) { escaped=0; continue; }
+            if (ch=='\\') { escaped=1; continue; }
+            if (ch=='"') quoted=0;
+            else if (ch<32) return NULL;
+        } else {
+            if (ch=='"') quoted=1;
+            if (ch=='{' || ch=='[') { if (++depth>8) return NULL; }
+            if (ch=='}' || ch==']') { if (--depth<0) return NULL; }
+        }
+    }
+    if (quoted || escaped || depth) return NULL;
     cJSON *c = cJSON_New_Item();
     if (!c) return NULL;
     const char *end = parse_value(c, skip(value));
-    if (!end) { cJSON_Delete(c); return NULL; }
+    if (!end || *skip(end)) { cJSON_Delete(c); return NULL; }
     return c;
 }
 
@@ -229,7 +256,7 @@ cJSON *cJSON_CreateFalse(void)  { cJSON *item = cJSON_New_Item(); if (item) item
 cJSON *cJSON_CreateBool(int b)  { return b ? cJSON_CreateTrue() : cJSON_CreateFalse(); }
 cJSON *cJSON_CreateNumber(double num) {
     cJSON *item = cJSON_New_Item();
-    if (item) { item->type = cJSON_Number; item->valuedouble = num; item->valueint = (int)num; }
+    if (item) { item->type = cJSON_Number; item->valuedouble = num; item->valueint = num >= INT_MAX ? INT_MAX : num <= INT_MIN ? INT_MIN : (int)num; }
     return item;
 }
 cJSON *cJSON_CreateString(const char *string) {
