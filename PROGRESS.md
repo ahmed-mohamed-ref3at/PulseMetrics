@@ -1,7 +1,7 @@
 # Implementation progress
 
 ## Current phase
-Phase 0 PASSED. Phase 1 in progress: strict source-aware C protocol and bounded store.
+Phases 0 and 1 PASSED. Phase 2 in progress: collector-owned checked persistence and lifecycle recovery.
 
 ## Verified baseline
 - Toolchain accessible at C:/msys64/ucrt64/bin: GCC16.2.0, CMake/CTest4.5.0, Ninja1.13.2. PATH is process-local only.
@@ -20,3 +20,6 @@ Phase1 strict protocol/store; Phase2 checked writer/alerts/retention and correct
 
 ## Preservation
 Original implementation/specification, design and audit artifacts are read-only references. Only V2 and sibling build/evidence directories have been written in this resumed implementation.
+
+## Phase 1 checkpoint
+Strict source/name parser, bounded1024-series store, type/unit checks and monotonic clock utilities implemented. `python scripts/build.py`: **6/6 CTest passed** (5.07s), including independent V2 numeric/source/capacity cases. Evidence: `../PulseMetrics_V2_BUILD/evidence/phase1.log`. Build helper corrected to resolve native tool executables by absolute path on Windows; no environment setting changed. Stable tag: `phase1-contract-passed`. Next: new schema with A/B corrections, single writer/retry queue with E accounting, and real failure integration tests.

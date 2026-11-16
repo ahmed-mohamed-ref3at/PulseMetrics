@@ -17,4 +17,5 @@ for command in [
     ['cmake', '--build', str(build), '--parallel', '2'],
     ['ctest', '--test-dir', str(build), '--output-on-failure'],
 ]:
+    command[0] = str(Path(args.toolchain) / (command[0] + '.exe'))
     subprocess.run(command, env=env, check=True)
