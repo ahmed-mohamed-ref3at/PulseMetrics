@@ -29,3 +29,8 @@ Implement bounded Toolhelp discovery, exact PID+creation identity, QPC-normalize
 
 ## Preservation and Git
 Only V2 and sibling build/evidence are modified. Original specification, received implementation, designs and audit artifacts remain read-only references. Local checkpoints only; no remote/publishing. Latest stable checkpoint: tag `phase2-persistence-passed` (resolve using `git rev-parse`). Original `7ec1983` and prior phase tags retained.
+
+## Phase 3 checkpoint
+Native monitor V2 and standalone C sender compile without reported warnings. Seven CTest tests pass (4.14s). `python -m pytest tests/integration/test_monitor.py -v -p no:cacheprovider --basetemp=../PulseMetrics_V2_BUILD/pytest-phase3`: 1 passed (4.83s). Real Win32 discovery, exact creation FILETIME (>2^53, transported as string), mismatched identity rejection, selected CPU/RAM history, untrack/retrack, confirmed termination and graceful native shutdown passed. PID reuse is tested through identity mismatch rather than forcing Windows to recycle a PID. Unsupported multi-group CPU topology remains explicitly unavailable; actual multi-group hardware testing is Not Run. Sender is compiled; end-to-end sender acceptance remains for integration hardening.
+
+Current phase: Phase 4. Next: narrow named-pipe controller, child ownership/readiness, read-only DAL, Overview and Process Explorer. Stable checkpoint tag `phase3-monitor-passed`.
