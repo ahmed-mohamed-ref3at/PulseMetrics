@@ -84,4 +84,4 @@ Settings are atomically replaced JSON with validated bounds; non-refresh changes
 
 ## Presentation
 
-Four native Streamlit pages, Plotly only for charts, local dark navy theme, purple/cyan accents, native widgets/cards/dialogs and a few app-owned CSS classes. No external fonts, custom JavaScript, animation framework or fabricated chart assets. Live and committed timestamps are distinct. Empty/stale/unavailable/error states are explicit. Desktop visual acceptance remains separate from passing AppTest functional tests.
+Four native Streamlit pages, Plotly only for charts, local dark navy theme, purple/cyan accents, native widgets/cards/dialogs and a few app-owned CSS classes. No external fonts, custom JavaScript, animation framework or fabricated chart assets. Live and committed timestamps are distinct. Empty/stale/unavailable/error states are explicit. The project lead has explicitly approved the current UI/UX after reporting 15/15 manual acceptance checks passed. This user-reported acceptance remains separate from passing AppTest functional tests. No architecture or presentation implementation changed during closeout.

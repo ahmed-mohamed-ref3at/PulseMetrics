@@ -4,7 +4,7 @@ A local Windows performance analytics application with a genuine **C17 metrics c
 
 The collector receives StatsD-like UDP observations, validates source/type/unit contracts, aggregates bounded windows, evaluates threshold rules and commits SQLite transactions. Python owns lifecycle and reads the data; it does not replace the systems programming core.
 
-**Delivery status:** all four screens and automated functional workflows are implemented. Fresh Debug/Release builds and functional tests pass. Independent visual acceptance at the target desktop resolutions is **blocked by desktop automation access**; no screenshots or visual-quality pass are claimed. Complete the [manual acceptance checklist](docs/testing.md) before university submission.
+**Delivery status:** the project lead reports **15/15 manual acceptance checks passed** and explicitly approves the current UI/UX, including offline operation/startup and exit/restart with retained history. These are user-reported results, separate from the recorded automated build/test evidence. Application source and UI remain exactly as approved at `22ab0b6`; this closeout changes documentation only. The intermittent alert-to-supporting-window display observation remains an unresolved review item, alongside the existing preservation exception and SQLite warning. See [acceptance evidence and review items](docs/testing.md).
 
 ## Start
 

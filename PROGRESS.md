@@ -1,31 +1,24 @@
-﻿# Implementation progress — final delivery candidate
+# PulseMetrics V2 - accepted project closeout
 
-## Functional implementation
-Phases0-6 functional work and Phase7 source delivery are implemented. Four primary screens, supporting dialogs, native C collector/monitor/sender, SQLite schema, controller/IPC, read-only analytics, tests, dependencies and documentation are present. Visual acceptance is assigned to the project lead; no further graphical automation or screenshots were performed.
+## Acceptance and scope
+The project lead reports **15/15 manual acceptance checklist items completed successfully** and explicitly approves the current UI/UX. Reported coverage includes live monitoring; discovery/track/untrack; analytics; termination/history preservation; Time Machine/comparisons; alert activation/recovery/disabling; settings persistence; health; offline operation/startup; Exit/restart/history persistence.
 
-## Final verification
-Tested source checkpoint: `b73279c29119c61200136b74171792a0be55db38`.
-- Fresh Release build originally passed at phase6; final incremental Release verification against latest source passed.
-- CTest: **2/2 V2 suites passed** (0.49s final run).
-- pytest: **14/14 passed** (50.33s final run), including actual native ingestion, locking/failure/recovery, process monitoring, controller/server readiness, AppTest UI controls and lifecycle.
-- Test/source/binary hashes: `docs/evidence/verification.json`. Detailed logs: `../PulseMetrics_V2_BUILD/evidence/verification-20261117T172226Z/`.
-- Original fresh Release evidence: `verification-20261117T024734Z/`. One retained SQLite vendor `-Wstringop-overread` warning remains documented; no harmlessness claim or suppression.
--44 runtime dependency pins and their installed transitive constraints matched; `docs/evidence/dependencies.json`. Fresh dependency acquisition/reinstallation was not performed.
-- Retired baseline tests were cross-checked: protocol, batches, independent statistics, gauge reset, timer rate, absent-window, read errors and UDP/persistence coverage remain. Current2suites +14pytest replace the historical five legacy targets. None was disabled to force a pass.
+These are **user-reported manual results**, not newly executed automated tests or independent graphical observations. No detailed fifteen-item execution log, browser/resolution information or screenshots were supplied; none are invented. See docs/testing.md for the acceptance record and retained reference checklist.
 
-## Final AssertionError / preservation
-The interrupted final assertion was a **real baseline mismatch**, not an application test failure. Exactly three received legacy runtime files differ: dist/database/pulsemetrics.db, dist/logs/collector.log and dist/logs/monitor.log. Observed timestamps:2026-11-16T12:25:43Z; logs show legacy collector/monitor activity. Actor unverified. No original file was restored/overwritten and no baseline was reset.
+## Preserved implementation and automated evidence
+Approved delivery candidate: `22ab0b6faf0c35b6f7d01fddd9709bb77f37646b`; existing tag `v2-delivery-candidate` remains at that commit. The closeout changes documentation only. Application source, UI/UX, layouts/colors/charts/navigation/styling, dependencies, tests and build/launch scripts remain identical to the approved candidate.
 
-Read-only final check:1,076/1,079 received files match; specification1/1, approved design5/5, initial audit974/974 and protected audit82/82 match; zero added received files. **Full received-tree preservation remains Failed / lead review required.** Exact expected/current hashes: `docs/evidence/preservation.json`.
+Prior automated evidence remains unchanged: fresh Release build passed; final V2 CTest 2/2 and pytest 14/14 passed (50.33s pytest); 44 installed runtime dependency pins/constraints matched. A prior actual application run committed 1,139 accepted observations and stopped cleanly. These tests were not rerun for documentation-only changes. Detailed source/binary evidence remains in docs/evidence/verification.json and the sibling build evidence directory.
 
-The earlier Job-reaping test wrongly expected nonzero exit on forced Job closure. It now checks a running child, prompt reaping and absence of normal completion. Production already requires an explicit clean native event. The complete final suite passes.
+## Retained exceptions and open review
+- **Preservation exception:** three received legacy runtime files differ from the original baseline: `PulseMetrics/dist/database/pulsemetrics.db`, `PulseMetrics/dist/logs/collector.log`, `PulseMetrics/dist/logs/monitor.log`. Recorded write times: 2026-11-16T12:25:43Z; legacy activity is visible in those logs, but actor unverified. The last check matched 1,076/1,079 received files, specification 1/1, approved designs 5/5, initial audit 974/974 and protected audit 82/82, with no added received files. Full-tree preservation remains Failed, not waived by product acceptance. No originals restored/overwritten or baseline reset. See docs/evidence/preservation.json.
+- **SQLite compiler warning:** retained SQLite 3.45.3 produces GCC 16.2 Release `-Wstringop-overread` in sqlite3Strlen30 inlined into sqlite3ColumnSetColl. Runtime tests passed; harmlessness is unproven. No patch, suppression or dependency change was made.
+- **R-01: intermittent alert-to-supporting-window display observation.** User-reported and unresolved; not independently reproduced. Exact symptom/reproduction details, event/window IDs and cause were not supplied. No implementation change was made. Further investigation or fixes require separate authorization.
 
-## Git and package
-Latest functional checkpoints: phase0 b002d27; phase1 3e075e9; phase2 9b2d2be; phase3 2c5b2d3; phase4 c66c575; phase5 295927d; phase6 84b0549; final tested code b73279c. Final delivery tag: `v2-delivery-candidate` (resolve to the final evidence/documentation commit).
+## Documentation checkpoint and delivery
+This closeout records the lead's acceptance in PROGRESS.md, README and relevant testing/course/architecture documentation. Existing candidate commit/tag and automated/preservation evidence are preserved. The documentation-only commit and updated source archive are verified against Git; the archive SHA256 sidecar and package verification manifest are kept in `../PulseMetrics_V2_RELEASES/`.
 
-`python scripts/package_source.py` archives only committed source into a unique sibling `PulseMetrics_V2_RELEASES/` ZIP and SHA256 sidecar. The final package verification manifest is stored there, outside source, and checks every archive blob against Git plus runtime sentinel/history preservation. No generated executables, caches, toolchains, databases, logs or audit artifacts belong in that archive. No remote is configured/published; first-party licensing is not selected.
+Final checks: only Markdown documentation may differ from 22ab0b6; the working tree must be clean before packaging; all archive files must match committed Git blobs; generated binaries, caches, personal databases/logs and audit artifacts are excluded. No remote publication, Computer Use, browser automation, source changes, redesign, refactoring or new dependencies are authorized or performed.
 
-## Exact next task for the project lead
-Use README/setup commands and the full `docs/testing.md` manual checklist to review Overview, Process Explorer, Analytics and Time Machine at1366x768,1920x1080 and125%scale, including real chart gestures, navigation, alerts/settings and Exit. Perform the disconnected browser walkthrough after installation. No visual/offline pass or genuine screenshot is claimed.
-
-Review the three original-runtime baseline mismatches and retained SQLite compiler warning. Confirm actual university catalog/administrative requirements, roster/contributions, deadline and license/publication policy. These outstanding acceptance items prevent an unconditional university-submission-ready declaration; no further implementation phase should be restarted merely to repeat passed work.
+## Remaining governance
+Product/manual UI acceptance is recorded as approved. The existing preservation exception, SQLite warning and R-01 remain documented review items. University catalog/deadline, honest roster/contribution evidence and first-party licensing/publication policy remain separate lead responsibilities; no additional approvals for them are inferred. No implementation work should restart without a new instruction.

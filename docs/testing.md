@@ -1,4 +1,4 @@
-﻿# Verification and remaining acceptance
+# Verification and remaining acceptance
 
 ## Automated evidence
 
@@ -22,8 +22,8 @@ Verified on Windows11 x64 build26200 / Python3.14.6 / UCRT64 GCC16.2.0:
 | Overview and Explorer controls | Passed through Streamlit AppTest using real native monitoring and track/untrack |
 | Analytics / Time Machine / Alerts | Passed through AppTest with real sender/history, threshold breach/recovery and previous-window interaction |
 | Native shutdown/restart and retained history | Passed; failed-drain case reports uncommitted observations and non-clean result |
-| Full graphical desktop/browser acceptance | Blocked; no genuine screenshots captured |
-| Full browser workflow with external connectivity disabled | Not Run; no system network/security settings changed |
+| Full graphical desktop/browser acceptance | Passed - project-lead reported manual acceptance; current UI/UX explicitly approved. Not independently repeated; no screenshots supplied/captured in closeout. |
+| Offline operation and offline startup | Passed - project-lead reported manual checks; not an automated or independently repeated result. |
 
 The two native suites cover exact grammar/bounds, independent counter/gauge/timer math, source/type separation, complete1,024-series capacity, partial-duration rate, write refusal/retry/idempotency, interrupted interval after final window, cross-session clock rollback, Unicode/duplicate JSON, retention and preserved open-alert evidence, repeated ended-state and post-end alert behavior.
 
@@ -35,13 +35,13 @@ The first Job-reaping test expected a nonzero process exit code and failed. Wind
 
 GCC16.2 Release optimization warns in retained SQLite3.45.3 `sqlite3Strlen30`, inlined into `sqlite3ColumnSetColl` (`native/vendor/sqlite3.c`, around34712/121484), about `-Wstringop-overread`. The helper has a null check; the warning concerns optimized caller pointer arithmetic. Required runtime tests pass, but that does not prove the warning is harmless. No warning suppression or speculative vendor patch was applied. Review/update the retained dependency with its own compatibility tests before broader distribution. No vulnerability advisory search or dependency upgrade is claimed.
 
-## Exact graphical limitation
+## Historical automated graphical limitation
 
 The browser connector returned `The browser access host is unavailable`. Desktop enumeration exposed a minimized Edge window; capture requested activation that the wrapper did not expose. The documented computer-use native helper then returned `failed to connect native pipe ... The system cannot find the file specified (os error 2)`. Further identical retries were stopped. This is an automation limitation, not evidence that the product GUI cannot render. A real local server ran and stopped cleanly with1,139 accepted native observations and zero uncommitted samples. No screenshot has been fabricated or copied from V1.
 
-## Manual desktop acceptance (outstanding gate)
+## Manual desktop procedure (acceptance reported complete)
 
-Use a fresh disposable `--data-dir` outside source. Record OS/browser, resolution, scale, source revision, date and observed outcome. Capture only actual application screenshots; keep unrelated personal process names out of distributable screenshots.
+The project lead reports completion of all 15 manual checklist items and approves the current UI/UX. The grouped reference procedure below is retained for future authorized verification; it is not a new request to repeat the review. No item-by-item execution log, browser/resolution details or screenshots were supplied with the closeout report, so none are invented here. The earlier automation limitation does not negate the user-reported acceptance.
 
 1. At1366x768 and1920x1080, then125% Windows display scale, launch with one command. Confirm browser opens without needing a pre-existing client. Inspect all four navigation items, readable text/focus, balanced cards/charts, no clipped controls, navy surfaces and consistent purple/cyan accents. Capture each page.
 2. Overview: wait two samples and a committed window. Confirm live CPU/RAM/sample timestamp changes; chart UTC window ends match stored observations and last commit is separately labelled. Use chart hover/zoom. Empty top-process state must explain tracking.
@@ -73,3 +73,22 @@ Retiring the old targets does not treat their old APIs as production coverage. T
 The final preservation assertion correctly failed on three received **legacy runtime** files: `PulseMetrics/dist/database/pulsemetrics.db`, `PulseMetrics/dist/logs/collector.log`, and `PulseMetrics/dist/logs/monitor.log`. Their modification timestamps are2026-11-16T12:25:43Z and the logs show legacy collector/monitor activity ending at14:25:43 local time. The actor cannot be established from these artifacts. No baseline reset, restoration or overwrite was attempted.
 
 The other1,076 received files, original specification, five approved design files,974 initial-audit files and82 protected audit artifacts match their baselines. Complete received-tree preservation therefore remains **Failed / project-lead review required**, even though protected source/design/audit checks pass. The detailed hashes are in `docs/evidence/preservation.json`. This is the unresolved final AssertionError; the earlier Job exit-code test assumption was separately corrected and passed the full Release suite.
+
+
+## Final project-lead acceptance record
+
+Recorded UTC: 2026-11-17T19:52:00.501688+00:00. Evidence source: the project lead's explicit final-acceptance message, not a new agent test run.
+
+**15/15 manual acceptance items reported successful; current UI/UX explicitly approved.** The supplied results cover live system monitoring; process discovery, tracking and untracking; historical analytics; process termination detection and retained history; Time Machine and historical comparisons; alert activation, automatic recovery and rule disabling; settings persistence; collector health; offline operation and offline startup; application Exit, restart and historical persistence. The exact fifteen individual checklist entries were not supplied; this record preserves the reported total and supplied coverage without inventing additional executions.
+
+Approved implementation baseline: `22ab0b6faf0c35b6f7d01fddd9709bb77f37646b`, retained at tag `v2-delivery-candidate`. The closeout is documentation-only: no application source, UI, styles, charts, navigation, dependencies or tests changed; no Computer Use/browser automation or remote publication occurred. Prior Release build, 2/2 CTest and 14/14 pytest results remain historical automated evidence and were not rerun for documentation changes. `docs/evidence/verification.json` remains unchanged as that historical record.
+
+### Unresolved review item R-01 - alert-to-supporting-window display
+
+The project lead reports an **intermittent alert-to-supporting-window display observation**. Record it as unresolved and not independently reproduced. Specific symptom details, frequency, reproduction steps, affected event/window IDs and root cause were not supplied; no cause, severity or fix is inferred. The overall manual acceptance and UI approval are recorded as given, while this observation remains open for a separately authorized review. No implementation change was made or is authorized by this closeout.
+
+### Exceptions retained without waiver
+
+- Three legacy runtime files still differ from the original preservation baseline, as detailed above and in `docs/evidence/preservation.json`. User acceptance does not reset that baseline or turn the full-tree check into a pass. No restoration or overwrite was performed.
+- The retained SQLite3.45.3 / GCC16.2 Release compiler warning remains a review item. Passing tests and user acceptance do not prove it harmless; no vendor patch, suppression or dependency change was made.
+- University catalog/administrative details, actual team contributions and licensing/publication decisions are separate from product acceptance; no new facts or approvals for those matters were supplied.
