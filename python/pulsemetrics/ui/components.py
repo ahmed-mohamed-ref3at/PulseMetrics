@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
+from functools import wraps
 import html
 import os
+import sqlite3
 import time
 
 import plotly.graph_objects as go
@@ -10,6 +12,17 @@ from pulsemetrics import ipc
 from pulsemetrics.data import Data
 
 PURPLE, CYAN = "#A58AFF", "#53D7E5"
+
+
+def guarded(function):
+    @wraps(function)
+    def show(*args, **kwargs):
+        try:
+            return function(*args, **kwargs)
+        except (sqlite3.Error, RuntimeError, OSError, TimeoutError, ValueError) as exc:
+            st.error(f"This control is unavailable: {exc}")
+            st.caption("No successful change is implied. Check application health and retry.")
+    return show
 
 
 def database():

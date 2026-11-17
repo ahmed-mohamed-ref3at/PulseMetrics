@@ -70,6 +70,10 @@ def explorer():
             if st.button("Remove saved selection"):
                 ipc.request("untrack", {"source": selected["source_key"]})
                 st.success("Selection removed. Stored observations remain available.")
+    ended = sorted((s for s in stored_sources if s["kind"] == "process" and s["ended_utc_us"]), key=lambda s: s["ended_utc_us"], reverse=True)[:20]
+    if ended:
+        with st.expander("Ended tracked instances · recent 20"):
+            st.dataframe([{"Process": s["display_name"], "PID": s["pid"], "Creation identity": str(s["creation_filetime"]), "State": "Ended", "End observed": timestamp(s["ended_utc_us"])} for s in ended], hide_index=True)
     if not rows:
         st.info("No processes match this search or page. Return to page 1 or clear the search.")
         return
@@ -112,6 +116,8 @@ def analytics():
     left, right = st.columns([2, 1])
     source_key = left.selectbox("Source", keys, index=keys.index(initial) if initial in keys else 0,
                                format_func=lambda k: f"{choices[k]['display_name']} · {k}", key="analytics_source")
+    if choices[source_key]["ended_utc_us"]:
+        st.caption("Ended process · " + timestamp(choices[source_key]["ended_utc_us"]) + " · Stored history is preserved.")
     ranges = {"30 minutes": 1800, "1 hour": 3600, "6 hours": 21600, "24 hours": 86400, "7 days": 604800}
     span = right.selectbox("Time range", list(ranges), index=1)
     rows = db.history(choices[source_key]["source_id"], *recent_range(ranges[span]))

@@ -31,3 +31,10 @@ Browser connector: browser access host unavailable. Desktop wrapper: Edge minimi
 
 ## Remaining acceptance
 Graphical/browser walkthrough at 1366x768 and 1920x1080/125%, genuine screenshots, and complete offline browser walkthrough are Blocked/Not Run. University catalog, actual team roster/contributions, deadline and publication/license policy require lead input. No claim of complete university submission readiness until those are resolved.
+
+## Final acceptance continuation
+The interruption's final AssertionError was preservation checking: three received dist runtime files differ from baseline. No functional test was failing in the successful Release verification. The runtime-file timestamps/logs show legacy activity at2026-11-16T12:25:43Z; attribution is unverified. No baseline was weakened or original file restored. Full received-tree preservation remains Failed; other1,076 received files plus specification/design/audit baselines match. Details: docs/testing.md and forthcoming docs/evidence/preservation.json.
+
+Latest changes after the previous Release pass: friendly supporting-dialog failures, explicit ended/saved-selection presentation, completed documentation and44-package runtime dependency closure. Retired baseline coverage was compared against original test assertions; fractional conversion, gauge-reset and timer-rate assertions were explicitly retained. Dependency pins and installed transitive constraints:44/44 matched. Visual acceptance is now assigned to the project lead by explicit instruction; no additional automation or screenshots will be attempted.
+
+Next: final Release verification at this exact source checkpoint, refreshed read-only preservation check, sanitized evidence, source-only archive with runtime sentinel/hash validation, and final clean Git checkpoint. Do not claim the preservation exception or manual visual/offline gate passed.

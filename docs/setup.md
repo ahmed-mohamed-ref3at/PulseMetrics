@@ -1,68 +1,56 @@
-# Phase 0 setup and blocker
+﻿# Setup and troubleshooting
 
-No functional build environment is currently available to this execution session. The earlier official MSYS2 acquisition request failed with WinError10013 (socket access forbidden). Current local checks found no UCRT64 compiler/CMake/CTest/Ninja or complete official offline package set. The same blocked download was not retried.
+## Verified environment
 
-## Minimal manual setup
+Windows 11 x64 build 26200; Python 3.14.6 (Anaconda); MSYS2 UCRT64 GCC16.2.0, CMake/CTest4.5.0, Ninja1.13.2; Streamlit1.58.0, Plotly6.7.0, Pandas3.0.3, pytest9.0.3. Native SQLite3.45.3 and the received compact cJSON adaptation are vendored. No GTK/Cairo, psutil, ORM, pywin32, web application framework or REST API is used by the project. Streamlit's own transitive dependencies are listed in the runtime lock; those do not constitute additional application services.
 
-Use one official MSYS2 x86_64 UCRT64 installation. Do not mix MSVC, MSYS, MINGW64 and UCRT64 libraries. V2 requires only these direct native packages:
+The original toolchain acquisition blocker is resolved. No dependency installation or system-setting change was performed during this resumed implementation. Builds use a process-local UCRT64 PATH.
 
-```text
-mingw-w64-ucrt-x86_64-gcc
-mingw-w64-ucrt-x86_64-cmake
-mingw-w64-ucrt-x86_64-ninja
-```
+## Reproduce on another Windows machine
 
-GCC supplies its transitive binutils/windres/headers/runtime dependencies; CMake supplies CTest. GTK, Cairo and pkgconf are not needed by the planned V2 backend build. SQLite/cJSON will be vendored from the received source with their notices; do not install a separate database server.
+1. Install official MSYS2 from `https://www.msys2.org/`. In its UCRT64 terminal, update with `pacman -Syu` (reopen/update again if instructed), then install:
 
-1. From a manually network-enabled environment, obtain a versioned x86_64 MSYS2 **base archive**, its official checksum/signature evidence, and official package metadata. Official distribution location: `https://repo.msys2.org/distrib/x86_64/`. Verify the chosen archive before executing it. No release filename or current version was verified by this session.
-2. Extract the isolated root beneath the already approved location:
+   ```text
+   pacman -S --needed mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja
+   ```
 
-   `C:\PulseMetricsWorkspace\AUDIT_REPORTS\FOLLOW_UP\toolchain\msys64`
+2. Install a compatible x64 Python. Python3.14.6 is the tested interpreter. Create an isolated environment outside source and install the pinned Windows runtime dependency closure:
 
-   Do not overwrite existing audit evidence or modify the host `E:/` installation. This approved parent contains spaces; if MSYS2 bootstrap rejects that path, stop and obtain approval for a shorter isolated location. Do not silently install elsewhere, create persistent drive mappings, alter system PATH or elevate.
-3. Open **that root's** UCRT64 shell (`ucrt64.exe`). Confirm it is the intended root and `MSYSTEM=UCRT64`. In that disposable shell:
+   ```powershell
+   python -m venv ..\PulseMetrics_V2_ENV
+   ..\PulseMetrics_V2_ENV\Scripts\python.exe -m pip install -r requirements.lock.txt
+   ..\PulseMetrics_V2_ENV\Scripts\python.exe -m pip install -r requirements-dev.txt
+   ```
 
-```bash
-printf '%s\n' "$MSYSTEM"
-cygpath -w /
-pacman -Syu
-# If requested, close/reopen this disposable shell and finish pacman -Syu.
-pacman -S --needed mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja
-pacman -Q > resolved-packages.txt
-gcc -dumpmachine
-gcc --version
-windres --version
-cmake --version
-ctest --version
-ninja --version
-command -v gcc cmake ctest ninja windres
-```
+   These are manual setup instructions, not installations this agent performed. The lock records the installed package set; this environment did not verify a fresh package download or offline wheel availability. Use official PyPI packages or verified offline wheels. No activation or persistent PATH change is necessary.
 
-Keep package signature validation enabled and use official MSYS2 sources only. Store the resolved manifest, downloaded official packages and their hashes in the isolated toolchain area, not the source repository. Expected compiler target is `x86_64-w64-mingw32`; also confirm the paths point into this root's `ucrt64/bin` because that target string alone does not identify the runtime variant.
+3. From the repository, use that environment's Python with `scripts/build.py`, then `scripts/launch.py`. The build helper sets explicit GCC/Ninja paths and places Debug outputs in `../PulseMetrics_V2_BUILD/debug`. `--configuration Release` selects the separate Release tree. `--toolchain` changes the build-tool directory when needed. The supplied installation path is `C:/msys64/ucrt64/bin`.
+4. `python scripts/verify.py --configuration Release` runs CMake, native CTest and all pytest cases against the selected freshly built binaries. It writes a unique evidence directory outside source.
 
-If internet acquisition is unavailable, supply the verified base archive plus the official signed **complete transitive package closure** for those three packages. A compiler executable alone or the old project's runtime DLLs is insufficient. Once those artifacts are available, installation can use the approved root and official metadata; do not disable signature checks to force cached packages through.
+SQLite is compiled into the collector. There is no SQLite server or GTK DLL setup. Python dependencies must be installed before an offline launch; the launcher never invokes pip or pacman.
 
-## Process-only build environment
+## Data and configuration
 
-After installation is actually verified, a PowerShell session may use:
+`--data-dir <directory>` selects an independent runtime. Default: `%LOCALAPPDATA%/PulseMetricsV2`. It contains `config.json`, generated native configuration, `metrics.sqlite`/WAL/SHM, bounded component logs and `last_shutdown.json`. A Win32 exclusive file handle prevents a second controller using the same directory. Different runtime directories still require distinct UDP/UI ports.
 
-```powershell
-$PulseToolchain = 'C:\PulseMetricsWorkspace\AUDIT_REPORTS\FOLLOW_UP\toolchain\msys64'
-$env:PATH = "$PulseToolchain\ucrt64\bin;$env:PATH"
-gcc --version
-cmake --version
-ctest --version
-ninja --version
-```
+Settings validate sampling/window/refresh in1-60seconds, retention1-30days, and ports1024-65535. Window >= sampling. Dashboard refresh applies after the settings rerun; collection, retention and ports require an explicit Exit and relaunch. External sources are declared in the runtime JSON before launch; see `config/example.json`. Do not change source types/units in place: give a changed contract a new metric name.
 
-This changes only that session, not persistent PATH. Native source preparation is gated until these tools work. The future build directory should be a sibling such as `../PulseMetrics_V2_BUILD/debug`, outside the distributable source repository. After the backend CMake files have been created and reviewed, the intended commands are:
+For a stopped backup, use Exit, verify `last_shutdown.json` reports clean, then copy the complete runtime directory. Do not copy only the main SQLite file while the collector is running. No V1 import is supported; preserve V1 data separately.
 
-```powershell
-cmake -S . -B ../PulseMetrics_V2_BUILD/debug -G Ninja -DCMAKE_BUILD_TYPE=Debug
-cmake --build ../PulseMetrics_V2_BUILD/debug --parallel 2
-ctest --test-dir ../PulseMetrics_V2_BUILD/debug --output-on-failure
-```
+## Troubleshooting
 
-These are **future commands, not currently runnable project instructions**: this blocked foundation contains no CMake graph or production code yet. Do not reuse a received cache or executable. Debug assertions must remain enabled. Later Release smoke tests are additional evidence, not replacements for Debug tests.
+| Symptom | Action |
+|---|---|
+| Cannot locate gcc/cmake/ninja | Verify official UCRT64 binaries at C:/msys64/ucrt64/bin. Run the Python build helper; do not reuse a legacy CMake cache. |
+| PowerShell blocks .ps1 | Use the Python entry points. No execution-policy change is needed. |
+| Port already in use | Stop the conflicting application or choose another local port in runtime config, then restart. The controller does not kill unrelated processes or accept another server as ready. |
+| Runtime already in use | Exit its existing controller. A stale lock file alone is harmless; ownership is the live Windows handle. |
+| Database startup failure | Inspect components.log. Unsupported schema/corruption fails explicitly. Preserve the files; use a separate new data directory to investigate. |
+| Pending batches/write errors | Inspect Health. At six pending batches the active store freezes; newly received lines are refused and counted. Accepted observations remain in memory for retry. |
+| Failed shutdown | Inspect last_shutdown.json and logs. A non-clean result may contain accepted-but-uncommitted counts. Forced termination cannot guarantee persistence of those values. |
+| Process access unavailable | No elevation is required. Keep the unavailable state, retry when accessible, or remove its saved selection. PID alone is never a safe identity. |
+| Clock warning | History keeps actual session timestamps; lifecycle uses session order. Retention pauses for that session. Correct the clock outside the application, then restart. |
+| Server healthy but no browser | Open the printed loopback URL. Server readiness does not depend on a browser client. |
+| GUI automation cannot capture | Complete docs/testing.md manually on the interactive desktop. AppTest passes do not establish pixel layout or browser behavior. |
 
-Python environment and pinned Streamlit/Plotly/pytest dependencies follow the native prerequisite; no packages have been installed here. Application runtime data will live under `%LOCALAPPDATA%/PulseMetricsV2/`, separate from source, release staging and build products. Phase 0 remains blocked until fresh toolchain/build evidence exists.
+Runtime logs rotate at5MiB with three backups. Retention removes eligible history in bounded writer transactions; it is not a hard disk-size limit. Open alert evidence and selected identities may outlive expired windows.

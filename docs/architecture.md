@@ -1,45 +1,87 @@
-# Approved architecture: focused implementation corrections
+﻿# Architecture and contracts
 
-The approved hybrid design remains the baseline: native C17 receiver/aggregation/persistence, native Windows monitoring, collector-only SQLite writer, read-only Python data/analytics, one Python controller and four Streamlit/Plotly screens. This document records the project lead's five corrections for implementation. **None is implemented or verified in this Phase 0 foundation.** No alternative architecture or additional service is introduced.
+## Components
 
-## A. Interrupted tracking is uncertain, not a fabricated end
+```mermaid
+flowchart LR
+  S[Measured C sender] -->|loopback UDP| C[C17 collector]
+  M[Win32 monitor] -->|selected/system observations| C
+  C -->|single checked writer| D[(SQLite WAL)]
+  P[Python controller] <-->|inherited bounded JSON| C
+  P <-->|inherited bounded JSON| M
+  U[Four Streamlit pages] <-->|current-user local named pipe| P
+  D -->|read-only sqlite3| A[Python data and analytics]
+  A --> U
+  P -->|owns process and verifies listener| U
+```
 
-Give tracking intervals an explicit state: `active`, `closed`, or `interrupted`. A closed interval requires a known end >= its start. An interrupted interval may have an unknown (`NULL`) end and records its recovery reason separately. The unique active-selection constraint applies to state `active`, not simply `end IS NULL`.
+Native files are under `native/`; Python modules are under `python/pulsemetrics/`. The collector owns parsing, validation, aggregation, synchronization, resource management, alerts and persistence. Monitor algorithms reuse the received Win32 API approach with corrected process identity, CPU timing and unavailable states. Python never writes the telemetry database. There is no application REST server or generic RPC layer.
 
-On recovery, mark prior active intervals `interrupted`; do not use the prior session's last committed boundary as a claimed process end. Preserve an optional last-observed time only if a real observation exists inside that interval. A selection that began after the last committed window therefore has no observed end or last sample. A new interval for a revalidated surviving identity is allowed. Historical UI labels uncertain duration; it does not display zero-duration or negative-duration tracking.
+Collector threads: main nonblocking Winsock receiver/window owner; bounded stdin control reader; one FIFO SQLite worker. A critical section protects mutable store/control/health state. The worker owns SQLite during concurrent operation; startup bootstrap and final session closure occur before/after its lifetime. Metadata commands copy/commit the candidate store under the lock. This may briefly delay receiving during a busy metadata transaction; UDP loss before receipt cannot be quantified.
 
-Required Phase 2/3 regression: session commits a window, starts tracking later, then is interrupted before another commit. Restart must keep the interval start, store unknown end/interrupted state, preserve schema validity and allow a new active interval without inventing observations.
+The monitor uses Toolhelp32 discovery, GetProcessTimes, GetSystemTimes, GlobalMemoryStatusEx, GetProcessMemoryInfo and QPC. It uses a sampling loop and a bounded control reader, closes handles explicitly and never reads command lines, environments, private memory contents or executable paths. Only system and selected process observations are persisted. Discovery is transient, bounded at10,000 entries; IPC pages contain at most25 rows to keep Unicode records below64KiB.
 
-## B. Wall-clock rollback does not determine lifecycle order
+## Protocol, identity and arithmetic
 
-Keep QPC-derived, session-anchored measurement timestamps unchanged. Give sessions a durable monotonically allocated integer order (SQLite AUTOINCREMENT session key, with UUID retained as external identity). Alert lifecycle records refer to the opening, latest-evaluation and closure session orders. Within one session, QPC-derived times are ordered; across sessions, session order defines lifecycle order even if UTC decreased.
+```text
+<source>/<metric>:<finite decimal>|c
+<source>/<metric>:<finite decimal>|g
+<source>/<metric>:<finite decimal>|ms
+```
 
-Replace cross-session `last_evaluated_utc >= opened_utc` / `closed_utc >= opened_utc` constraints with checks on session order, and require the timestamp ordering only when the session order is equal. Retain the actual UTC timestamps; do not clamp, offset or rewrite them to make old checks pass. Persist a visible rollback warning on the new session. Historical queries and alert displays include session identity and distinguish chronological lifecycle order from wall-clock labels; overlapping clock ranges must not be merged into a fabricated continuous series. Session-order identity is never recycled by retention.
+Example: `app.sender/operations:1|c`. Sources use ASCII letter followed by letters/digits/underscore/dot/hyphen, max64bytes; names use the same grammar, max128bytes. Source/metric declarations are registered before admission. `system` and `p.<pid>.<creation_filetime>` are native sources; external keys begin `app.`. The creation FILETIME is exact64-bit100ns Windows identity, carried as a decimal **string** across JSON. Names/PIDs alone are not identity. Two configured independent sources remain separate even with identical metric names.
 
-Required Phase 2 regression: open an alert in session1 at a later UTC time, restart session2 with an earlier wall clock, then evaluate and recover it. The same event closes without a duplicate, foreign keys/ordering remain valid, original timestamps are unchanged, and the UI data contract exposes the clock warning. Missing observations still do not resolve an alert.
+Maximum UDP datagram1,200bytes, at most16 lines, max256bytes/line; LF separates lines and final CR is allowed. No tags, sample-rate modifier, client timestamp, gauge-relative delta or backfill. Decimal exponent notation is allowed; hex, whitespace, trailing junk, NUL, non-finite and overflow values are rejected. Absolute values <=1e12; counters/timers nonnegative; percentages0-100; bytes/count nonnegative. Registered type and unit are immutable. No automatic catalog creation from UDP.
 
-## C. Server readiness precedes browser/UI readiness
+Each accepted observation belongs to its collector **receipt-time** window. QPC elapsed time plus a session UTC anchor supplies ordered receipt timestamps. UTC microseconds and actual elapsed microseconds are stored. Counter: observation count, sum, min/max/last; rate=sum/actual window seconds. Gauge: absolute last value plus observed mean/min/max. Timer: actual measured milliseconds, observed mean/min/max and count; timer rate=count/actual seconds. At most1,000,000 observations per series/window and absolute sum<=1e15. Reject before changing state if a bound would be exceeded.
 
-Start the owned Streamlit process, wait for its server to listen and its built-in local health check to succeed within a finite deadline, then open the browser. Do not wait for any page code or browser-generated notification before opening the browser. This uses Streamlit's existing server health facility, not a new application REST API.
+A missing series creates **no aggregate row**. Zero is an actual value, not a missing-data substitute. The chart layer inserts breaks for missing sequence intervals and frozen-buffer gaps, and draws sessions separately. It never stretches observations into repeated history points. Window selection uses stored IDs. Range queries are bounded and explicitly disclose clipping.
 
-UI-connected/first-render status is optional subsequent diagnostics. It does not control whether the browser is opened or whether server startup is successful. Detect early server exit and port conflicts; never mistake a pre-existing listener for the owned server. Keep an explicit error and unwind owned children on failed startup.
+## Capacity, persistence and recovery
 
-Required Phase 4 regression: launch with browser opening stubbed/delayed and zero connected browser clients; server readiness must complete. Then connect the first client and verify the page. Test server failure/port conflict separately.
+At most1,024 resident series,100 selected processes,32 configured external sources (32 declarations each, also subject to total series capacity),256 active alert rules,128 native tasks,64 controller child requests and256 cached mutation acknowledgements. Each message is bounded at64KiB and nesting is bounded in C.
 
-## D. Keep IPC narrow
+Exactly **six immutable pending batches total**, including the batch being written or retried, plus **one active-or-frozen store**. A slot is released only after confirmed COMMIT. When all six slots are occupied at a boundary, freeze the active store; count newly refused lines. On recovery, enqueue that frozen store and start a new window, preserving the pause as a gap. No accepted samples are silently evicted. A batch identity is `(session_id, sequence)`; retries do not duplicate it.
 
-Retain bounded inherited stdin/stdout JSON messages between controller and native children and one current-user local controller endpoint for Streamlit's Python process. Use a small allowlisted command handler, request IDs, desired-state operations, finite timeouts, acknowledgements and explicit errors. No generic RPC framework, broker, service registry or arbitrary command/SQL dispatch. Drain stdout/stderr so a child cannot deadlock on a full pipe; EOF/broken pipes have an explicit lifecycle outcome.
+SQLite schema: `database/schema.sql`, embedded at build time. STRICT tables, FK constraints, immutable metric/source identities, immutable committed windows/aggregates, unique open tracking/event constraints and indexes on times and metric/window keys. Runtime bootstrap checks schema version/objects, quick_check and WAL. Existing incompatible databases fail startup; no V1 migration.
 
-Keep controller ownership outside Streamlit reruns. Readiness uses the server test described above. Tests cover fragmented/oversize input, a lost acknowledgement/idempotent retry, saturated command capacity and shutdown while a normal command is pending.
+```mermaid
+erDiagram
+  sessions ||--o{ windows : commits
+  sessions ||--o{ tracking_intervals : tracks
+  sources ||--o{ tracking_intervals : selected
+  sources ||--o{ metrics : declares
+  metrics ||--o{ aggregates : observes
+  windows ||--o{ aggregates : contains
+  windows ||--|| health_samples : records
+  metrics ||--o{ alert_rules : thresholds
+  alert_rules ||--o{ alert_events : evaluates
+```
 
-## E. Capacity includes the write currently in flight
+Transactions insert window, aggregates, alert transitions and health atomically. SQLITE errors retain the immutable batch for bounded-backoff retry. WAL/FULL and foreign_keys are enabled; busy timeout500ms. Final drain has a10-second budget; a failed drain reports remaining uncommitted samples and a non-clean native result. A crash or forced Job termination can lose uncommitted memory; exit code alone is not proof of a clean shutdown.
 
-Use one explicit accounting invariant: at most **six immutable persistence batches total**, including queued, retrying and in-flight work, plus **one active aggregation store**. Each contains at most1,024 series. Dequeuing a batch for SQLite does not free a slot. Only confirmed COMMIT frees that slot; rollback/retry keeps it occupied.
+Retention performs bounded window deletion (<=500 per pass) after commits, with cascading aggregate/health cleanup, old closed events/interval cleanup, unreferenced disabled rule/process/session pruning and passive checkpointing. Open alert values/timestamps survive expiration of supporting windows (nullable FKs). Retention pauses under a session clock warning. This is an age policy, not a hard database-size guarantee.
 
-At a window boundary with all six persistence slots occupied, freeze the existing active store in place and stop admitting new observations. There is no extra seventh pending-copy allocation and no new active store alongside that frozen store. Drain incoming datagrams and count known refused lines. When a persistence slot becomes free, move the frozen store into that slot, then open a new active window; the pause remains a historical gap. Maximum resident data is six immutable batches plus one active-or-frozen store, with bounded metadata/control buffers.
+Focused corrections implemented:
 
-Use a single writer connection and FIFO write stream; retry identifiers prevent duplicate commits. Report active, queued and in-flight counts separately, with an explicitly defined total; never double-count the in-flight batch as queued. “Accepted” still does not mean committed. An unsuccessful write must never generate a success status or release/drop its accepted data. Shutdown reports remaining uncommitted samples if its bounded drain fails.
+- **A:** prior active tracking intervals become `interrupted` with NULL end. An interval starting after the last committed window never acquires a fabricated earlier end.
+- **B:** AUTOINCREMENT session order determines cross-session alert lifecycle ordering; UTC consistency is checked within one session. Original measurement timestamps are never rewritten. Clock warnings are visible and persisted.
+- **C:** verify the owned Streamlit PID's listener and built-in health response before opening a browser. No UI/page-generated readiness notification is required.
+- **D:** narrow allowlisted desired-state JSON commands with IDs, acknowledgements/timeouts and explicit errors. No pickle, shell dispatch, arbitrary SQL or generic broker. The controller's named pipe uses a current-user SID ACL, first-instance flag and remote-client rejection. Its reply-read acknowledgement prevents disconnect from discarding an unread response.
+- **E:** six-slot accounting includes in-flight/retry work; the independent locked-writer fixture proves accepted data survives unlock exactly once.
 
-Required Phase 1/2 regressions: block writes, fill six slots, reach the active-store boundary, assert bounded accounting and refused-input counts, release the lock, and prove all previously accepted samples commit exactly once. Test final shutdown with the in-flight transaction failing. These are deterministic functional tests, not benchmark infrastructure.
+## Process and application lifecycle
 
-These changes will be applied to V2's schema, source, tests and user-facing semantics in their dependent phases. The approved design package and received implementation remain unchanged as historical references.
+System CPU uses deltas of kernel+user minus idle (Windows kernel includes idle). Process CPU uses process kernel+user delta divided by actual QPC elapsed and logical processor count, normalized to machine capacity. First sample, counter reset, failed identity/timing or unsupported multi-group topology is unavailable. RAM is physical used/total/available bytes; process memory is resident working-set bytes. UI converts bytes explicitly to MiB/GiB. Neither source measures arbitrary application response time; only an instrumented timer does.
+
+Track: monitor verifies PID+creation -> collector commits source/catalog/interval -> monitor enables sending. A failed enable is compensated by untracking. Untrack: monitor stops sending -> collector disables admission and closes interval; accepted observations remain queued. Confirmed signaled process handles produce Ended. Access denial remains uncertain. Repeated end messages preserve the first recorded end time; delayed batches cannot reopen an ended process's alerts.
+
+Startup: lock runtime -> validate config -> create owning Job -> native collector ready -> monitor ready/revalidate saved identities -> start local Streamlit -> verify owned listener/health -> browser. Saved inaccessible selections remain intent, visible/removable in Explorer; they are not claimed as active measurements.
+
+Exit: stop monitor -> drain/stop collector -> expose and save clean/error result -> UI acknowledges result (or20s deadline) -> close Job/readonly server. Controller failure closes the Job and reaps children. Multiple browser tabs share the same controller/children. Browser tab closure does not stop collection. Restart preserves committed data and restores only independently verified same-instance selections.
+
+Settings are atomically replaced JSON with validated bounds; non-refresh changes require restart. Logs rotate at5MiB with three backups. Only the sender, monitor and collector use metric UDP; all destinations are fixed loopback. Other same-user programs can send forged local UDP, and current-user pipe security is not a hostile-same-user isolation boundary.
+
+## Presentation
+
+Four native Streamlit pages, Plotly only for charts, local dark navy theme, purple/cyan accents, native widgets/cards/dialogs and a few app-owned CSS classes. No external fonts, custom JavaScript, animation framework or fabricated chart assets. Live and committed timestamps are distinct. Empty/stale/unavailable/error states are explicit. Desktop visual acceptance remains separate from passing AppTest functional tests.

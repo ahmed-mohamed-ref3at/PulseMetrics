@@ -13,7 +13,7 @@ build = root.parent / 'PulseMetrics_V2_BUILD' / args.configuration.lower()
 env = os.environ.copy()
 env['PATH'] = str(Path(args.toolchain)) + os.pathsep + env.get('PATH', '')
 for command in [
-    ['cmake', '-S', str(root), '-B', str(build), '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=' + args.configuration,
+    ['cmake', '-S', str(root), '-B', str(build), '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=' + args.configuration, '-DBUILD_TESTING=ON',
      '-DCMAKE_C_COMPILER=' + (Path(args.toolchain) / 'gcc.exe').as_posix(),
      '-DCMAKE_MAKE_PROGRAM=' + (Path(args.toolchain) / 'ninja.exe').as_posix()],
     ['cmake', '--build', str(build), '--parallel', '2'],

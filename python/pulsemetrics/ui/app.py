@@ -5,7 +5,7 @@ import uuid
 import streamlit as st
 
 from pulsemetrics import ipc
-from pulsemetrics.ui.components import database
+from pulsemetrics.ui.components import database, guarded
 from pulsemetrics.ui import pages
 
 st.set_page_config(page_title="PulseMetrics", page_icon=":material/monitoring:", layout="wide")
@@ -20,6 +20,7 @@ with st.sidebar:
 
 
 @st.dialog("Settings")
+@guarded
 def settings():
     current = ipc.request("status")
     with st.form("settings_form"):
@@ -37,6 +38,7 @@ def settings():
 
 
 @st.dialog("Collector & database health", width="large")
+@guarded
 def health():
     current = ipc.request("status")
     st.caption("Accepted observations are in memory until a successful database commit. UDP loss before receipt cannot be measured.")
@@ -47,6 +49,7 @@ def health():
 
 
 @st.dialog("Alerts", width="large")
+@guarded
 def alerts():
     from pulsemetrics.ui.components import alert_list
     db = database()
@@ -87,6 +90,7 @@ def alerts():
 
 
 @st.dialog("Exit PulseMetrics")
+@guarded
 def exit_dialog():
     st.write("Stop native monitoring, commit the final window, and close the local application server.")
     st.caption("Closing a browser tab alone leaves collection running.")
