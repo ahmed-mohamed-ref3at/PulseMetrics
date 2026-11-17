@@ -1,6 +1,7 @@
 import json
 import os
 import socket
+import subprocess
 import threading
 import time
 import uuid
@@ -57,6 +58,36 @@ def test_controller_server_ready_without_browser_and_ui(tmp_path, monkeypatch):
         explorer.run()
         next(b for b in explorer.button if b.label == "Untrack process").click().run()
         until(lambda: any(r["pid"] == os.getpid() and not r["tracked"] for r in controller.snapshot["processes"]))
+        # Real measured sender -> C parser/store -> committed SQLite -> Analytics.
+        counter = next(m for m in controller.data.metrics() if m["source_key"] == "app.sender" and m["name"] == "operations")
+        rule_id = str(uuid.uuid4())
+        ipc.request("add_rule", {"metric_id": counter["metric_id"], "label": "Measured operations", "field": "sum", "operator": "gt", "threshold": 0, "severity": "warning"}, name=controller.server.name, request_id=rule_id)
+        sent = subprocess.run([str(BIN / "pulse_sender.exe"), "--port", str(settings["udp_port"])], env=controller.env, capture_output=True, text=True, check=True)
+        assert "UDP attempts=10 failures=0" in sent.stdout
+        until(lambda: controller.data.alerts(counter["source_id"]))
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sender:
+            sender.sendto(b"app.sender/operations:0|c", ("127.0.0.1", settings["udp_port"]))
+        until(lambda: controller.data.alerts(counter["source_id"])[0]["close_reason"] == "recovered")
+        analysis = AppTest.from_string("import streamlit as st\nfrom pulsemetrics.ui.pages import analytics\nst.set_page_config(layout='wide')\nanalytics()", default_timeout=15)
+        analysis.session_state["source_key"] = "app.sender"
+        analysis.run()
+        assert not analysis.exception, analysis.exception
+        assert analysis.title[0].value == "Performance Analytics"
+        assert len(analysis.get("plotly_chart")) == 3
+        history = AppTest.from_string("import streamlit as st\nfrom pulsemetrics.ui.pages import time_machine\nst.set_page_config(layout='wide')\ntime_machine()", default_timeout=15).run()
+        assert not history.exception, history.exception
+        assert history.title[0].value == "Performance Time Machine"
+        assert len(history.dataframe) >= 1
+        previous = next(b for b in history.button if b.label == "Previous window")
+        if not previous.disabled:
+            before = history.selectbox[0].value
+            previous.click().run()
+            assert not history.exception, history.exception
+            assert history.selectbox[0].value != before
+        app.run()
+        next(b for b in app.button if b.label == "Alerts").click().run()
+        assert not app.exception, app.exception
+        assert any("Measured operations" in m.value for m in app.markdown)
         rid = str(uuid.uuid4())
         first = ipc.request("save_settings", {"retention_days": 6}, name=controller.server.name, request_id=rid)
         assert ipc.request("save_settings", {"retention_days": 6}, name=controller.server.name, request_id=rid) == first

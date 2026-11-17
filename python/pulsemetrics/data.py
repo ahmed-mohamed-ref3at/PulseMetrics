@@ -40,6 +40,10 @@ class Data:
         return self.query("""SELECT mw.*,s.display_name,s.source_key FROM metric_windows mw
             JOIN sources s USING(source_id) WHERE window_id=? ORDER BY s.source_id,mw.name""", (window_id,))
 
+    def window_meta(self, window_id):
+        rows = self.query("SELECT w.*,s.session_order,s.clock_warning FROM windows w JOIN sessions s USING(session_id) WHERE window_id=?", (window_id,))
+        return rows[0] if rows else None
+
     def alerts(self, source_id=None):
         return self.query("""SELECT e.*,r.label,r.field,r.operator,r.threshold,r.severity,
             m.name,m.unit,m.source_id,s.display_name FROM alert_events e
