@@ -1,4 +1,4 @@
-﻿# Course technical report and requirements coverage
+# Course technical report and requirements coverage
 
 ## Actual product and evidence basis
 
@@ -76,7 +76,7 @@ These are V2 resolutions; they do not retroactively change the received implemen
 
 Automated functional implementation gates passed; graphical/offline submission gates remain outstanding. The retained SQLite warning and dependency maintenance need review before wider release. Hardware coverage is one Windows11 x64 environment; unsupported multi-group CPU returns unavailable. Tests do not establish all OS versions, machine capacities, hostile-local-user security or maximum throughput.
 
-Original specification, received implementation, initial/follow-up audit artifacts and approved designs are preserved; the final preservation manifest records the actual counts and hashes checked. No production runtime database/process-history file enters Git or the source archive.
+The specification, all approved design/audit baselines and1,076 of1,079 received files match their original hashes. Three received legacy runtime files differ, as detailed below; full-tree preservation is not a pass. No production runtime database/process-history file enters Git or the source archive.
 
 Meaningful remaining team responsibilities for8-10 actual members: native review and regression ownership; process-monitor/platform validation; persistence/retention review; controller/deployment; Python analytics; UI visual/accessibility refinement; integration/offline QA; user/build documentation; course presentation; evidence and release review (combine adjacent areas for8). These are proposed ownership areas, not claims about work already performed. Each member's actual artifacts, reviews and tests must be recorded honestly by the project lead.
 
