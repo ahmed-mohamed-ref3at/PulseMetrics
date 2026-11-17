@@ -72,6 +72,9 @@ def test_real_process_identity_tracking_and_end(tmp_path):
         assert row["created"].isdigit() and int(row["created"]) > 2**53
         assert 0 <= row["cpu_percent"] <= 100
         assert row["memory_bytes"] > 0 and not row["tracked"]
+        idle = monitor.row(0)
+        if idle:
+            assert not idle["created"] and idle["cpu_percent"] is None and idle["memory_bytes"] is None
         args = {"pid": row["pid"], "created": row["created"], "label": row["name"]}
         monitor.request("validate", dict(args, created=str(int(row["created"]) + 1)), ok=False)
         monitor.request("validate", args)

@@ -61,6 +61,15 @@ def explorer():
     result = ipc.request("list_processes", {"search": search, "sort": {"CPU": "cpu_percent", "Memory": "memory_bytes", "Name": "name", "PID": "pid"}[sort], "offset": (offset - 1) * 25})
     rows = result["rows"]
     st.caption(f"{result['total']} matching processes · 25 per page · Sample {timestamp(state['live'].get('sampled_at_us'))}")
+    stored_sources = database().sources()
+    saved = [s for s in stored_sources if s["kind"] == "process" and s["selected"]]
+    if saved:
+        with st.expander("Saved tracking selections"):
+            st.caption("Selections may remain saved while identity access is unavailable. Only revalidated instances are sampled; a saved selection alone does not mean live data.")
+            selected = st.selectbox("Saved instance", saved, format_func=lambda s: f"{s['display_name']} · PID {s['pid']} · {s['creation_filetime']}")
+            if st.button("Remove saved selection"):
+                ipc.request("untrack", {"source": selected["source_key"]})
+                st.success("Selection removed. Stored observations remain available.")
     if not rows:
         st.info("No processes match this search or page. Return to page 1 or clear the search.")
         return
@@ -81,8 +90,8 @@ def explorer():
                     st.success("Selection applied. The next native sample will update this table.")
                 except (RuntimeError, OSError, TimeoutError) as exc:
                     st.error(str(exc))
-            if "analytics_page" in st.session_state and st.button("Analyze stored history", disabled=not row["source"]):
-                st.session_state["source_key"] = row["source"]
+            if "analytics_page" in st.session_state and st.button("Analyze stored history", disabled=row["source"] not in {s["source_key"] for s in stored_sources}):
+                st.session_state["source_target"] = row["source"]
                 st.switch_page(st.session_state["analytics_page"])
 
 
@@ -95,6 +104,9 @@ def analytics():
         st.info("Waiting for the collector to register its sources.")
         return
     choices = {s["source_key"]: s for s in sources}
+    target = st.session_state.pop("source_target", None)
+    if target in choices:
+        st.session_state["analytics_source"] = target
     initial = st.session_state.get("source_key", "system")
     keys = list(choices)
     left, right = st.columns([2, 1])

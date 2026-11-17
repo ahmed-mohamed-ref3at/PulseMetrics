@@ -73,5 +73,6 @@ void pm_emit(cJSON *o) {
 void pm_reply(const cJSON *request,bool ok,const char *message,cJSON *result) {
     cJSON *o=cJSON_CreateObject();cJSON_AddNumberToObject(o,"v",1);cJSON_AddStringToObject(o,"id",pm_text(request,"id"));
     cJSON_AddBoolToObject(o,"ok",ok);cJSON_AddStringToObject(o,"message",message?message:"");
-    if(result)cJSON_AddItemToObject(o,"result",result);pm_emit(o);
+    if(result)cJSON_AddItemToObject(o,"result",result);
+    pm_emit(o);
 }

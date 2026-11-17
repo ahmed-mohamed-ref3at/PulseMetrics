@@ -31,7 +31,8 @@ static bool source(PmDb *d,const char *key,const char *kind,const char *label,in
     if(!pm_identifier(key,64)||!label||!strlen(label)||strlen(label)>1024)return error(d,"invalid source");
     bool process=!strcmp(kind,"process");
     sqlite3_stmt *s=query(d,"SELECT source_id,kind,pid,creation_filetime FROM sources WHERE source_key=%Q",key);
-    if(!s)return false;int rc=sqlite3_step(s);
+    if(!s)return false;
+    int rc=sqlite3_step(s);
     if(rc==SQLITE_ROW) {
         *id=sqlite3_column_int64(s,0);
         bool same=!strcmp((const char*)sqlite3_column_text(s,1),kind);
@@ -69,6 +70,9 @@ bool pm_db_open(PmDb *d,const char *path,const char *session,int64_t now,int sam
         if(tables)return error(d,"unrecognized existing database; V1 import is not supported");
         if(sqlite3_exec(d->sql,pm_schema_sql,NULL,NULL,NULL)!=SQLITE_OK)return error(d,sqlite3_errmsg(d->sql));
     } else if(version!=1)return error(d,"unsupported schema version");
+    s=query(d,"SELECT s.session_order,t.state,m.unit,w.elapsed_us,a.last_received_utc_us,r.enabled,e.closed_session_order,h.pending_batches FROM sessions s,tracking_intervals t,metrics m,windows w,aggregates a,alert_rules r,alert_events e,health_samples h LIMIT 0");
+    if(!s)return error(d,"database schema objects are missing or incompatible");
+    sqlite3_finalize(s);
     s=query(d,"PRAGMA journal_mode=WAL");if(!s)return false;
     bool wal=sqlite3_step(s)==SQLITE_ROW&&!strcmp((const char*)sqlite3_column_text(s,0),"wal");sqlite3_finalize(s);
     if(!wal)return error(d,"database requires WAL mode");
@@ -84,7 +88,8 @@ bool pm_db_open(PmDb *d,const char *path,const char *session,int64_t now,int sam
     d->session_order=sqlite3_last_insert_rowid(d->sql);return commit(d);
 }
 bool pm_db_seed(PmDb *d,PmStore *store,const cJSON *config,int64_t now) {
-    if(!execf(d,"BEGIN IMMEDIATE"))return false;int64_t sid;
+    if(!execf(d,"BEGIN IMMEDIATE"))return false;
+    int64_t sid;
     if(!source(d,"system","system","This computer",0,0,now,&sid))return rollback(d);
     const char *names[]={"cpu.percent","memory.used","memory.total","memory.available","memory.percent"};
     for(int i=0;i<5;i++)if(!metric(d,store,sid,"system",names[i],PM_GAUGE,(i==0||i==4)?PM_PERCENT:PM_BYTES))return rollback(d);
@@ -101,7 +106,7 @@ bool pm_db_seed(PmDb *d,PmStore *store,const cJSON *config,int64_t now) {
     return commit(d);
 }
 static bool event_update(PmDb *d,const PmBatch *b,int64_t wid,const PmRow *row) {
-    sqlite3_stmt *s=query(d,"SELECT rule_id,field,operator,threshold FROM alert_rules WHERE metric_id=%lld AND enabled=1",row->metric_id);if(!s)return false;
+    sqlite3_stmt *s=query(d,"SELECT r.rule_id,r.field,r.operator,r.threshold FROM alert_rules r JOIN metrics m USING(metric_id) JOIN sources s USING(source_id) WHERE r.metric_id=%lld AND r.enabled=1 AND (s.kind<>'process' OR s.selected=1)",row->metric_id);if(!s)return false;
     int rc;bool ok=true;
     while((rc=sqlite3_step(s))==SQLITE_ROW) {
         const char *id=(const char*)sqlite3_column_text(s,0),*field=(const char*)sqlite3_column_text(s,1),*op=(const char*)sqlite3_column_text(s,2);
@@ -116,13 +121,15 @@ static bool event_update(PmDb *d,const PmBatch *b,int64_t wid,const PmRow *row) 
         } else ok=execf(d,"UPDATE alert_events SET last_session_order=%lld,closed_session_order=%lld,last_evaluated_utc_us=%lld,closed_utc_us=%lld,close_reason='recovered',last_window_id=%lld,last_value=%!.17g WHERE rule_id=%Q AND closed_utc_us IS NULL",d->session_order,d->session_order,b->end_us,b->end_us,wid,v,id);
         if(!ok)break;
     }
-    if(rc!=SQLITE_DONE&&ok)ok=error(d,sqlite3_errmsg(d->sql));sqlite3_finalize(s);return ok;
+    if(rc!=SQLITE_DONE&&ok)ok=error(d,sqlite3_errmsg(d->sql));
+    sqlite3_finalize(s);return ok;
 }
 bool pm_db_batch(PmDb *d,const PmBatch *b,const PmHealth *h) {
     if(b->end_us<=b->start_us)return error(d,"invalid batch interval");
     if(!execf(d,"BEGIN IMMEDIATE"))return false;
     sqlite3_stmt *s=query(d,"SELECT start_utc_us,end_utc_us FROM windows WHERE session_id=%Q AND sequence=%lld",d->session,b->sequence);
-    if(!s)return rollback(d);int rc=sqlite3_step(s);
+    if(!s)return rollback(d);
+    int rc=sqlite3_step(s);
     if(rc==SQLITE_ROW){bool same=sqlite3_column_int64(s,0)==b->start_us&&sqlite3_column_int64(s,1)==b->end_us;sqlite3_finalize(s);if(!same){error(d,"batch identity conflict");return rollback(d);}return commit(d);}
     sqlite3_finalize(s);if(rc!=SQLITE_DONE)return rollback(d);
     if(!execf(d,"INSERT INTO windows(session_id,sequence,start_utc_us,end_utc_us,elapsed_us,partial,committed_utc_us) VALUES(%Q,%lld,%lld,%lld,%lld,%d,%lld)",d->session,b->sequence,b->start_us,b->end_us,b->end_us-b->start_us,b->partial,pm_wall_us()))return rollback(d);
@@ -167,7 +174,7 @@ bool pm_db_command(PmDb *d,PmStore *store,const cJSON *req,int64_t now) {
         const char *key=pm_text(args,"source");int64_t sid=source_id(d,key);ok=sid>0&&!strncmp(key,"p.",2);
         bool ended=!strcmp(op,"ended");
         if(ok)ok=execf(d,"UPDATE sources SET selected=0 WHERE source_id=%lld; UPDATE tracking_intervals SET state='closed',end_utc_us=%lld,end_reason=%Q WHERE source_id=%lld AND state='active'",sid,now,ended?"ended":"untracked",sid);
-        if(ok&&ended)ok=execf(d,"UPDATE sources SET ended_utc_us=%lld WHERE source_id=%lld",now,sid)&&close_events(d,sid,"","source_ended",now);
+        if(ok&&ended)ok=execf(d,"UPDATE sources SET ended_utc_us=coalesce(ended_utc_us,%lld) WHERE source_id=%lld",now,sid)&&close_events(d,sid,"","source_ended",now);
         if(ok)for(size_t i=0;i<PM_SERIES;i++)if(!strcmp(candidate->series[i].source,key))candidate->series[i].enabled=false;
     } else if(!strcmp(op,"add_rule")) {
         const char *id=pm_text(req,"id"),*field=pm_text(args,"field"),*cmp=pm_text(args,"operator"),*label=pm_text(args,"label"),*severity=pm_text(args,"severity");
@@ -178,8 +185,15 @@ bool pm_db_command(PmDb *d,PmStore *store,const cJSON *req,int64_t now) {
             if(!s)ok=false;else {
                 int rc=sqlite3_step(s);
                 if(rc==SQLITE_ROW)ok=sqlite3_column_int64(s,0)==mid&&!strcmp((const char*)sqlite3_column_text(s,1),field)&&!strcmp((const char*)sqlite3_column_text(s,2),cmp)&&sqlite3_column_double(s,3)==limit&&!strcmp((const char*)sqlite3_column_text(s,4),label)&&!strcmp((const char*)sqlite3_column_text(s,5),severity);
-                else if(rc==SQLITE_DONE)ok=execf(d,"INSERT INTO alert_rules VALUES(%Q,%lld,%Q,%Q,%Q,%!.17g,%Q,1,%lld)",id,mid,label,field,cmp,limit,severity,now);
-                else ok=false;sqlite3_finalize(s);
+                else if(rc==SQLITE_DONE) {
+                    sqlite3_stmt *capacity=query(d,"SELECT count(*) FROM alert_rules WHERE enabled=1");
+                    ok=capacity&&sqlite3_step(capacity)==SQLITE_ROW&&sqlite3_column_int(capacity,0)<256;
+                    sqlite3_finalize(capacity);
+                    if(ok)ok=execf(d,"INSERT INTO alert_rules VALUES(%Q,%lld,%Q,%Q,%Q,%!.17g,%Q,1,%lld)",id,mid,label,field,cmp,limit,severity,now);
+                    else error(d,"active alert rule limit (256) reached");
+                }
+                else ok=false;
+                sqlite3_finalize(s);
             }
         }
     } else if(!strcmp(op,"disable_rule")) {
@@ -187,7 +201,8 @@ bool pm_db_command(PmDb *d,PmStore *store,const cJSON *req,int64_t now) {
         ok=strlen(id)==36&&execf(d,"UPDATE alert_rules SET enabled=0 WHERE rule_id=%Q",id)&&close_events(d,0,id,"rule_disabled",now);
     } else ok=error(d,"unsupported command");
     if(ok)ok=commit(d);else {if(!d->error[0])error(d,"invalid command or resource limit");rollback(d);}
-    if(ok)memcpy(store,candidate,sizeof(*store));free(candidate);return ok;
+    if(ok)memcpy(store,candidate,sizeof(*store));
+    free(candidate);return ok;
 }
 bool pm_db_finish(PmDb *d,int64_t now,bool clean) {
     if(!execf(d,"BEGIN IMMEDIATE"))return false;

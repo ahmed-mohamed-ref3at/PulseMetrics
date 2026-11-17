@@ -70,7 +70,7 @@ static DWORD WINAPI controls(LPVOID arg) {
     char *line=malloc(PM_COMMAND);if(!line){InterlockedExchange(&m->stop,1);return 1;}
     size_t length=0;bool overflow=false;int ch;
     while((ch=fgetc(stdin))!=EOF) {
-        if(ch!='\n'){if(length<PM_COMMAND-1)line[length++]=(char)ch;else overflow=true;continue;}
+        if(ch!='\n'){if(ch==0)overflow=true;if(length<PM_COMMAND-1)line[length++]=(char)ch;else overflow=true;continue;}
         line[length]=0;length=0;cJSON *r=overflow?NULL:pm_json_parse(line);overflow=false;
         const char *op=pm_text(r,"op");bool ok=false;const char *message="invalid command";
         if(!cJSON_IsObject(r)||pm_number(r,"v",0)!=1||!*pm_text(r,"id")){pm_reply(r,false,message,NULL);cJSON_Delete(r);continue;}

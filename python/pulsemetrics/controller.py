@@ -285,7 +285,11 @@ class Controller:
                 except (RuntimeError, TimeoutError, OSError) as exc:
                     errors.append(str(exc))
         self.exit_result = {"clean": not errors, "errors": errors, "collector": self.collector.final if self.collector else None}
-        atomic_json(self.directory / "last_shutdown.json", self.exit_result)
+        try:
+            atomic_json(self.directory / "last_shutdown.json", self.exit_result)
+        except OSError as exc:
+            errors.append(f"Could not save shutdown report: {exc}")
+            self.exit_result["clean"] = False
         self.logger.info("Shutdown result: %s", self.exit_result)
         self.state = "stopped"
         self.exit_deadline = time.monotonic() + 20

@@ -63,7 +63,7 @@ static DWORD WINAPI input_thread(LPVOID arg) {
     Engine *e=arg;char *line=malloc(PM_COMMAND);if(!line){InterlockedExchange(&e->stop,1);return 1;}
     size_t n=0;bool overflow=false;int ch;
     while((ch=fgetc(stdin))!=EOF) {
-        if(ch!='\n'){if(n<PM_COMMAND-1)line[n++]=(char)ch;else overflow=true;continue;}
+        if(ch!='\n'){if(ch==0)overflow=true;if(n<PM_COMMAND-1)line[n++]=(char)ch;else overflow=true;continue;}
         line[n]=0;n=0;cJSON *req=overflow?NULL:pm_json_parse(line);overflow=false;
         if(!cJSON_IsObject(req)||pm_number(req,"v",0)!=1||!*pm_text(req,"id")) {pm_reply(req,false,"invalid bounded JSON command",NULL);cJSON_Delete(req);continue;}
         const char *op=pm_text(req,"op");
@@ -141,7 +141,7 @@ static cJSON *read_config(const char *path) {
     FILE *f=fopen(path,"rb");if(!f)return NULL;
     char *s=calloc(PM_COMMAND,1);if(!s){fclose(f);return NULL;}
     size_t n=fread(s,1,PM_COMMAND-1,f);bool too_long=fgetc(f)!=EOF;fclose(f);
-    cJSON *o=too_long||!n?NULL:pm_json_parse(s);free(s);return o;
+    cJSON *o=too_long||!n||memchr(s,0,n)?NULL:pm_json_parse(s);free(s);return o;
 }
 int main(int argc,char **argv) {
     setlocale(LC_NUMERIC,"C");_setmode(_fileno(stdin),_O_BINARY);_setmode(_fileno(stdout),_O_BINARY);pm_output_init();

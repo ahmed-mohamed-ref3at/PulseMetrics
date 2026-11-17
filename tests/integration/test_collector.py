@@ -28,7 +28,8 @@ class Collector:
             "sources": [{"key": "app.fixture", "label": "Functional fixture", "metrics": [
                 {"name": "count", "type": "counter", "unit": "count"},
                 {"name": "gauge", "type": "gauge", "unit": "unit"},
-                {"name": "timer", "type": "timer", "unit": "ms"}]}],
+                {"name": "timer", "type": "timer", "unit": "ms"}]},
+                {"key": "app.second", "label": "Independent source", "metrics": [{"name": "count", "type": "counter", "unit": "count"}]}],
         }
         path = directory / "runtime.json"
         path.write_text(json.dumps(config), encoding="utf-8")
@@ -153,4 +154,47 @@ def test_failed_shutdown_reports_uncommitted(tmp_path):
         assert done["write_failures"] > 0
     finally:
         lock.close()
+        app.close()
+
+
+def test_sources_and_bounded_control_framing(tmp_path):
+    app = Collector(tmp_path)
+    try:
+        app.send("app.fixture/count:5|c\napp.second/count:7|c")
+        until(lambda: app.request("status")["accepted"] == 2)
+        app.send("x" * 1201)
+        app.send("app.fixture/count:1|c\n" * 17)
+        app.send("")
+        until(lambda: app.request("status")["datagrams_rejected"] == 3)
+        app.process.stdin.write("x" * 65537 + "\n")
+        app.process.stdin.flush()
+        assert app.messages.get(timeout=5)["ok"] is False
+        app.process.stdin.write('{"v":1,"id":"bad","op":"status"}\x00junk\n')
+        app.process.stdin.flush()
+        assert app.messages.get(timeout=5)["ok"] is False
+        rid = str(uuid.uuid4())
+        packet = json.dumps({"v": 1, "id": rid, "op": "status"}) + "\n"
+        app.process.stdin.write(packet[:10])
+        app.process.stdin.flush()
+        app.process.stdin.write(packet[10:])
+        app.process.stdin.flush()
+        assert app.messages.get(timeout=5)["id"] == rid
+        app.stop()
+        with sqlite3.connect(app.database) as db:
+            assert dict(db.execute("SELECT s.source_key,sum(a.sample_sum) FROM aggregates a JOIN metrics m USING(metric_id) JOIN sources s USING(source_id) GROUP BY s.source_key")) == {"app.fixture": 5, "app.second": 7}
+    finally:
+        app.close()
+
+
+def test_control_eof_commits_before_exit(tmp_path):
+    app = Collector(tmp_path)
+    try:
+        app.send("app.fixture/count:1|c")
+        until(lambda: app.request("status")["accepted"] == 1)
+        app.process.stdin.close()
+        final = app.messages.get(timeout=15)
+        assert final["event"] == "stopped" and final["clean"]
+        assert final["uncommitted_samples"] == 0
+        assert app.process.wait(timeout=5) == 0
+    finally:
         app.close()

@@ -52,6 +52,32 @@ int main(void) {
     assert(scalar(&d,"SELECT count(*) FROM alert_events WHERE closed_utc_us<opened_utc_us AND opened_session_order=1 AND closed_session_order=2 AND close_reason='recovered'")==1);
     assert(scalar(&d,"SELECT count(*) FROM pragma_foreign_key_check")==0);
     assert(pm_db_finish(&d,earlier+3000000,true));
+    pm_db_retention(&d,later+20*86400000000LL);
+    assert(scalar(&d,"SELECT count(*) FROM windows")==2); /* rollback warning pauses expiry */
+    pm_db_close(&d);
+    const int64_t newest=later+9*86400000000LL;
+    memset(store,0,sizeof(*store));
+    assert(pm_db_open(&d,file,"third",newest,1,1,7));assert(!d.clock_warning);
+    assert(pm_db_seed(&d,store,config,newest));
+    in.value=80;assert(pm_update(store,&in,newest+500));
+    b->sequence=0;b->start_us=newest;b->end_us=newest+1000000;pm_snapshot(store,b);
+    assert(pm_db_batch(&d,b,&h));
+    pm_db_retention(&d,newest+8*86400000000LL);
+    assert(scalar(&d,"SELECT count(*) FROM windows")==0);
+    assert(scalar(&d,"SELECT count(*) FROM aggregates")==0);
+    assert(scalar(&d,"SELECT count(*) FROM alert_events WHERE closed_utc_us IS NULL AND first_window_id IS NULL AND opening_value=80")==1);
+    assert(scalar(&d,"SELECT count(*) FROM pragma_foreign_key_check")==0);
+    const int64_t resumed=newest+8*86400000000LL;
+    command(&d,store,"{\"op\":\"track\",\"args\":{\"pid\":123,\"created\":\"123456789012345678\",\"label\":\"fixture\"}}",resumed);
+    command(&d,store,"{\"id\":\"00000000-0000-0000-0000-000000000002\",\"op\":\"add_rule\",\"args\":{\"metric_id\":6,\"field\":\"last\",\"operator\":\"gt\",\"threshold\":0,\"label\":\"Ended source\",\"severity\":\"warning\"}}",resumed);
+    PmInput process={"p.123.123456789012345678","cpu.percent",PM_GAUGE,10};
+    assert(pm_update(store,&process,resumed+10));
+    command(&d,store,"{\"op\":\"ended\",\"args\":{\"source\":\"p.123.123456789012345678\"}}",resumed+20);
+    command(&d,store,"{\"op\":\"ended\",\"args\":{\"source\":\"p.123.123456789012345678\"}}",resumed+30);
+    assert(scalar(&d,"SELECT ended_utc_us FROM sources WHERE pid=123")==resumed+20);
+    b->sequence=1;b->start_us=resumed;b->end_us=resumed+100;pm_snapshot(store,b);
+    assert(pm_db_batch(&d,b,&h));
+    assert(scalar(&d,"SELECT count(*) FROM alert_events WHERE rule_id='00000000-0000-0000-0000-000000000002'")==0);
     pm_db_close(&d);cJSON_Delete(config);free(store);free(b);
     /* Received compact JSON parser: strict controls, escapes, duplicate fields. */
     assert(!pm_json_parse("{\"a\":1,\"a\":2}"));

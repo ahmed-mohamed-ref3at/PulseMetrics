@@ -51,7 +51,7 @@ def alerts():
     from pulsemetrics.ui.components import alert_list
     db = database()
     st.caption("Rules evaluate actual committed windows. Missing observations leave an event unresolved; they do not mean recovery.")
-    alert_list(db.alerts(), 10)
+    alert_list(db.alerts(), 10, navigate_key="alert_panel")
     with st.expander("Create a threshold rule"):
         metrics = db.metrics()
         if metrics:

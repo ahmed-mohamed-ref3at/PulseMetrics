@@ -93,13 +93,18 @@ def chart(rows, name, label, unit, scale=1, field="last_value", key=None):
     return st.plotly_chart(figure, key=key, config={"displaylogo": False}, on_select="rerun", selection_mode="points")
 
 
-def alert_list(rows, maximum=4):
+def alert_list(rows, maximum=4, navigate_key=None):
     if not rows:
         st.caption("No threshold events recorded. Add a rule from Alerts to evaluate future collected windows.")
     for row in rows[:maximum]:
         state = "Open · awaiting recovery" if row["closed_utc_us"] is None else "Closed · " + row["close_reason"].replace("_", " ")
         st.markdown(f"**{html.escape(row['label'])}**")
         st.caption(f"{state} · {row['display_name']} · {row['name']} · {row['last_value']:.2f} {row['unit']} · {timestamp(row['last_evaluated_utc_us'])}")
+        if row["last_window_id"] is None:
+            st.caption("The supporting window has expired under retention. Event values and timestamps are preserved.")
+        elif navigate_key and "history_page" in st.session_state and st.button("Inspect supporting window", key=f"{navigate_key}_{row['event_id']}"):
+            st.session_state["history_target"] = row["last_window_id"]
+            st.switch_page(st.session_state["history_page"])
 
 
 def recent_range(seconds=3600):

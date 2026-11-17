@@ -22,15 +22,15 @@ def main():
         url = controller.ui_start(open_browser=not args.no_browser)
         print(f"PulseMetrics is ready: {url}\nData: {controller.directory}", flush=True)
         controller.serve()
-        return 0 if controller.exit_result and controller.exit_result["clean"] else 1
     except KeyboardInterrupt:
-        return 0
+        pass  # finally performs the same checked native shutdown as the UI
     except Exception as exc:
         print(f"PulseMetrics could not start: {exc}", file=sys.stderr)
         return 1
     finally:
         if controller:
             controller.close()
+    return 0 if controller and controller.exit_result and controller.exit_result["clean"] else 1
 
 
 if __name__ == "__main__":
