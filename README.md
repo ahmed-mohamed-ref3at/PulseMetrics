@@ -1,4 +1,4 @@
-# PulseMetrics V2
+# PulseMetrics 
 
 Local Windows performance analytics with a genuine C17 metrics collector and a Python presentation layer. PulseMetrics turns real system, selected-process and instrumented application observations into traceable live views, alerts and historical windows.
 
