@@ -1,78 +1,81 @@
 # PulseMetrics V2
 
-A local Windows performance analytics application with a genuine **C17 metrics collector**, native process monitoring, SQLite WAL history, and four Streamlit/Plotly screens.
+Local Windows performance analytics with a genuine C17 metrics collector and a Python presentation layer. PulseMetrics turns real system, selected-process and instrumented application observations into traceable live views, alerts and historical windows.
 
-The collector receives StatsD-like UDP observations, validates source/type/unit contracts, aggregates bounded windows, evaluates threshold rules and commits SQLite transactions. Python owns lifecycle and reads the data; it does not replace the systems programming core.
+## Features
 
-**Delivery status:** the project lead reports **15/15 manual acceptance checks passed** and explicitly approves the current UI/UX, including offline operation/startup and exit/restart with retained history. These are user-reported results, separate from the recorded automated build/test evidence. Application source and UI remain exactly as approved at `22ab0b6`; this closeout changes documentation only. The intermittent alert-to-supporting-window display observation remains an unresolved review item, alongside the existing preservation exception and SQLite warning. See [acceptance evidence and review items](docs/testing.md).
+- **Overview:** live CPU/RAM, resource trends, tracked processes and collector health.
+- **Process Explorer:** discovery, identity-safe tracking/untracking and ended/unavailable states.
+- **Performance Analytics:** source/time selection, counters, gauges, measured timers and threshold evidence.
+- **Performance Time Machine:** stored windows, honest gaps and compatible historical comparisons.
+- Local retention, settings, graceful exit/restart and offline operation after dependency installation.
 
-## Start
+## Architecture
 
-Prerequisites: Windows x64, Python (tested 3.14.6), installed dependencies, and official MSYS2 UCRT64 at `C:\msys64`. See [setup](docs/setup.md) for exact versions and installation commands. Nothing in the launcher downloads software or changes persistent PATH.
-
-```powershell
-python scripts/build.py
-python scripts/launch.py
+```mermaid
+flowchart LR
+  S[Measured C sender] -->|loopback UDP| C[C17 collector]
+  M[Win32 monitor] -->|selected/system observations| C
+  C -->|single checked writer| D[(SQLite WAL)]
+  P[Python controller] <-->|inherited bounded JSON| C
+  P <-->|inherited bounded JSON| M
+  U[Four Streamlit pages] <-->|current-user local named pipe| P
+  D -->|read-only sqlite3| A[Python data and analytics]
+  A --> U
+  P -->|owns process and verifies listener| U
 ```
 
-The launcher opens the local application only after its own server becomes healthy. User data defaults to `%LOCALAPPDATA%\PulseMetricsV2`, outside this source repository. To use a workspace-local disposable data directory:
+C owns UDP reception, parsing, validation, aggregation, synchronization, resource limits, alerts and the single SQLite writer. The native monitor uses Win32 process identity and sampling. Python controls lifecycle and reads telemetry; it does not replace the systems programming core.
+
+**Stack:** C17, Win32, Winsock, SQLite WAL; Python/sqlite3, Pandas, Streamlit, Plotly; UCRT64 GCC, CMake, Ninja; CTest and pytest. See [contracts and ERD](docs/architecture.md).
+
+## Install, build and launch
+
+Windows x64 is required. Follow [setup and troubleshooting](docs/setup.md) for official MSYS2 UCRT64 installation and tested versions. From this repository in PowerShell:
 
 ```powershell
-python scripts/launch.py --data-dir ..\PulseMetrics_V2_RUNTIME\my-session
+python -m venv ..\PulseMetrics_V2_ENV
+..\PulseMetrics_V2_ENV\Scripts\python.exe -m pip install -r requirements.lock.txt
+..\PulseMetrics_V2_ENV\Scripts\python.exe -m pip install -r requirements-dev.txt
+..\PulseMetrics_V2_ENV\Scripts\python.exe scripts/build.py
+..\PulseMetrics_V2_ENV\Scripts\python.exe scripts/launch.py
 ```
 
-Build and verify Release, then launch that build:
+Use a checkout parent without another PulseMetrics build: helpers use the sibling `PulseMetrics_V2_BUILD` directory, and an existing cache may reference another checkout. Do not overwrite another checkout's build evidence. Default toolchain: `C:/msys64/ucrt64/bin`; PATH changes are process-local. Runtime data defaults outside source to `%LOCALAPPDATA%/PulseMetricsV2`.
+
+The launcher opens the printed loopback URL after server readiness. **Exit PulseMetrics** performs shutdown; closing a browser tab leaves collection running. Dependencies must already be installed for offline startup. No fresh-machine dependency acquisition has been verified.
+
+## Verification
 
 ```powershell
-python scripts/verify.py --configuration Release
-python scripts/launch.py --bin-dir ..\PulseMetrics_V2_BUILD\release\bin
+..\PulseMetrics_V2_ENV\Scripts\python.exe scripts/verify.py --configuration Release
 ```
 
-## Use
+Recorded automated evidence: Release build passed, **2/2 CTest suites and 14/14 pytest tests passed**. The project lead separately reported **15/15 manual acceptance items passed** and approved the UI/UX, including offline startup and restart/history. These are user-reported manual results, not independent graphical evidence. Publication preparation does not rerun or strengthen those claims. See [testing](docs/testing.md).
 
-- **Overview:** live system CPU/RAM, discovered/tracked counts, stored trends, top tracked processes, recent events and collection health.
-- **Process Explorer:** real discovery, search/sort, PID plus exact creation identity, track/untrack, unavailable and ended states. No controls terminate monitored programs.
-- **Performance Analytics:** source/range selection, actual counters/gauges/timers, weighted statistics, threshold evidence and observed memory changes.
-- **Performance Time Machine:** select real committed windows, inspect their values, navigate previous/next, compare compatible observations and retain visible gaps.
-- **Alerts / Settings / Collector Health:** supporting dialogs. **Exit PulseMetrics** stops the producer, drains the collector, reports the outcome, then closes the server. Closing a browser tab alone leaves collection running.
-
-Run the small measured sender separately (default UDP port 8125):
-
-```powershell
-..\PulseMetrics_V2_BUILD\debug\bin\pulse_sender.exe --port 8125
-```
-
-It instruments five finite checksum operations with counters, an in-flight gauge and QPC-measured milliseconds. Sending UDP is not proof of receipt: inspect collector health and `Measured metric sender` in Analytics. There are no built-in demo modes or benchmark controls.
-
-Defaults: **5s sampling · 10s aggregation · 5s refresh · 7-day retention**. Units, gaps, partial windows and freshness are explained in the [user guide](docs/user-guide.md).
-
-## Repository
+## Repository and collaboration
 
 ```text
-native/core/        protocol, bounded store, clocks, JSON and checked SQLite writer
-native/collector/   UDP receiver, control thread, bounded FIFO writer and shutdown
-native/monitor/     Win32 discovery, process identity and selected sampling
-native/sender/      standalone measured instrumentation example
-native/vendor/      retained SQLite and compact cJSON sources/notices
-native/tests/       V2 native correctness/recovery suites
-python/pulsemetrics/controller.py, child.py, ipc.py, windows.py
-python/pulsemetrics/data.py, analytics.py, ui/
-database/schema.sql
-config/example.json
-scripts/           build, launch, verify and source-only packaging
-tests/             Python and native-process integration
-.streamlit/        local theme and server defaults
-docs/              architecture, usage, acceptance and course report
+native/                 collector, core, monitor, measured sender, tests, vendor
+python/pulsemetrics/    controller, IPC, read-only analytics and four-screen UI
+database/               schema
+config/                 configuration example
+scripts/                build, launch, verify, source packaging
+tests/                  Python and integration tests
+docs/                   architecture, setup, user guide, evidence, course report
+.streamlit/             approved theme and server defaults
+requirements*.txt       direct, runtime-lock and development dependencies
 ```
 
-Builds, logs, personal process history, downloaded packages and runtime databases belong outside the distributable repository. The obsolete GTK application and temporary legacy baseline targets are absent; their reviewed baseline is preserved in Git tag `phase0-native-passed` and in the untouched received implementation.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before proposing changes. [Screenshot guidance](docs/screenshots/README.md) lists requested genuine captures; no screenshot assets are currently supplied.
 
-## Verification and limits
+## Known limitations and publication status
 
-Current V2 acceptance uses two native suites plus 14 pytest cases, including real UDP, SQLite lock/recovery, source/type separation, interrupted tracking, clock rollback, retention, selected-process lifecycle, actual UI controls through AppTest, measured sender, alerts/history, restart and failed shutdown. [Testing](docs/testing.md) distinguishes these results from visual/offline checks still requiring a desktop. Evidence includes source and executable hashes; actual logs remain in the sibling build evidence directory.
+- Intermittent alert-to-supporting-window display observation remains unresolved.
+- SQLite 3.45.3 emits a retained GCC Release `-Wstringop-overread` warning. Passing tests do not prove it harmless; no vulnerability-free claim is made.
+- No advanced performance benchmark or fresh-machine installation claim is made.
+- Multi-processor-group CPU measurements are unavailable; local UDP is not authenticated; V1 history is not imported.
+- Three received legacy runtime files differ from original preservation hashes. This exception is documented, not waived; those runtime files are not included here.
+- First-party licensing/publication rights and actual contributor attribution require project-lead confirmation. No license is selected by this preparation.
 
-SQLite 3.45.3 is retained from the received source. GCC16.2 Release compilation emits one vendor `-Wstringop-overread` diagnostic; no corresponding runtime failure was observed in the required tests. It remains a dependency review item, not a claimed false positive or completed vulnerability assessment. Multi-processor-group CPU measurement is explicitly unavailable. Local UDP is not authenticated against other programs running as the user. V1 databases are not imported.
-
-Read [architecture and contracts](docs/architecture.md), [course/requirements coverage](docs/course-report.md), and [third-party notices](THIRD_PARTY_NOTICES.md). No team contributions, roster or university deadline are invented. The first-party project license and publication policy require project-lead approval; nothing has been pushed or published.
-
-Preservation review: three received legacy runtime files differ from the original baseline; source/design/audit matches and exact exceptions are recorded in [the preservation manifest](docs/evidence/preservation.json). Full-tree preservation requires project-lead review. No original was restored or baseline reset.
+[Third-party notices and provenance](THIRD_PARTY_NOTICES.md) preserve SQLite and modified cJSON notices. [Dependency metadata](docs/dependency-licenses.md) records locally available Python license declarations. Original audit evidence is historical and retains original revision identifiers; publication-history identifiers may differ after authorized privacy sanitization.

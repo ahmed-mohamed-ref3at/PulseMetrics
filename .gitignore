@@ -34,3 +34,23 @@ config/config.json
 Thumbs.db
 # Keep schema SQL, configuration examples, dependency locks, source assets,
 # tests, and intentional sanitized documentation evidence tracked.
+
+# Prevent accidental privacy and delivery artifacts (examples remain tracked).
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+*.p12
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+*.db-journal
+*.sqlite-journal
+*.sqlite3-journal
+*.log.*
+*.zip
+*.7z
+*.tar
+*.tar.gz

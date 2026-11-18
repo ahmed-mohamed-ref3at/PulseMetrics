@@ -22,3 +22,6 @@ Final checks: only Markdown documentation may differ from 22ab0b6; the working t
 
 ## Remaining governance
 Product/manual UI acceptance is recorded as approved. The existing preservation exception, SQLite warning and R-01 remain documented review items. University catalog/deadline, honest roster/contribution evidence and first-party licensing/publication policy remain separate lead responsibilities; no additional approvals for them are inferred. No implementation work should restart without a new instruction.
+
+## Separate publication preparation
+The sections above record original development closeout. This separate copy preserves sanitized history and adds publication documentation and preventive ignore rules only. See docs/publication.md for revision correspondence, approved email visibility and remaining permissions. Evidence remains historical; no application tests were rerun. No application/UI changes or remote publication occurred.
