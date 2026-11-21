@@ -145,9 +145,9 @@ class Controller:
                    PULSE_REFRESH=str(self.config["refresh_seconds"]), STREAMLIT_BROWSER_GATHER_USAGE_STATS="false")
         command = [sys.executable, "-m", "streamlit", "run", str(ROOT / "python/pulsemetrics/ui/app.py"),
                    "--server.address=127.0.0.1", f"--server.port={port}", "--server.headless=true",
-                   "--server.fileWatcherType=none", "--browser.gatherUsageStats=false",
-                   "--theme.base=dark", "--theme.primaryColor=#9A82FF", "--theme.backgroundColor=#080F20",
-                   "--theme.secondaryBackgroundColor=#111C32", "--theme.textColor=#EAF0FF",
+                   "--server.fileWatcherType=none", "--browser.gatherUsageStats=false", "--client.toolbarMode=minimal",
+                   "--theme.base=dark", "--theme.primaryColor=#2DE0C4", "--theme.backgroundColor=#050A14",
+                   "--theme.secondaryBackgroundColor=#0B1424", "--theme.textColor=#E6EEFB",
                    "--theme.font=sans-serif"]
         self.ui = subprocess.Popen(command, env=env, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                    text=True, encoding="utf-8", creationflags=subprocess.CREATE_NO_WINDOW)
@@ -158,7 +158,7 @@ class Controller:
         while time.monotonic() < deadline:
             if self.ui.poll() is not None:
                 raise RuntimeError("Streamlit server exited during startup")
-            if owns_listener(self.ui.pid, port):
+            if owns_listener(self.ui.pid, port, self.job.handle):
                 try:
                     with urllib.request.urlopen(url + "/_stcore/health", timeout=0.5) as response:
                         if response.status == 200:
