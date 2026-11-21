@@ -5,18 +5,14 @@ import uuid
 import streamlit as st
 
 from pulsemetrics import ipc
-from pulsemetrics.ui.components import database, guarded
-from pulsemetrics.ui import pages
+from pulsemetrics.ui.components import database, guarded, health_html, health_items
+from pulsemetrics.ui import pages, theme
 
 st.set_page_config(page_title="PulseMetrics", page_icon=":material/monitoring:", layout="wide")
-st.html("""<style>
-.pm-eyebrow { color:#53D7E5; letter-spacing:.16em; font-size:.72rem; font-weight:700; margin-top:.3rem; }
-.pm-brand { font-size:1.7rem; font-weight:750; letter-spacing:-.06em; color:#EAF0FF; }
-.pm-brand span { color:#A58AFF; }
-.pm-tagline { color:#9CAFCF; font-size:.78rem; margin:0 0 1.8rem; }
-</style>""")
+theme.inject()
 with st.sidebar:
-    st.html('<div class="pm-brand">Pulse<span>Metrics</span></div><div class="pm-tagline">PERFORMANCE, IN PERSPECTIVE.</div>')
+    st.html('<div class="pm-brand"><b>Pulse<span>Metrics</span></b></div>'
+            '<div class="pm-tagline">Local PC performance intelligence</div>')
 
 
 @st.dialog("Settings")
@@ -42,8 +38,12 @@ def settings():
 def health():
     current = ipc.request("status")
     st.caption("Accepted observations are in memory until a successful database commit. UDP loss before receipt cannot be measured.")
+    counts = database().counts()
+    live = current["live"]
+    stale = live.get("age_seconds") is None or live["age_seconds"] > max(15, current["settings"]["sample_seconds"] * 3)
+    st.html(health_html(health_items(current, stale, counts)))
     st.json(current["collector"])
-    st.write("Stored catalog and history", database().counts())
+    st.write("Stored catalog and history", counts)
     if current["restart_required"]:
         st.info("Saved collection settings will apply after restart.")
 
@@ -113,22 +113,33 @@ def render(function):
     content()
 
 
-overview = st.Page(lambda: render(pages.overview), title="Overview", icon=":material/space_dashboard:", default=True, url_path="overview")
-explorer = st.Page(lambda: render(pages.explorer), title="Process Explorer", icon=":material/memory:", url_path="processes")
-analytics = st.Page(lambda: render(pages.analytics), title="Performance Analytics", icon=":material/query_stats:", url_path="analytics")
-history = st.Page(lambda: render(pages.time_machine), title="Performance Time Machine", icon=":material/history:", url_path="history")
+overview = st.Page(lambda: render(pages.overview), title="Overview", default=True, url_path="overview")
+explorer = st.Page(lambda: render(pages.explorer), title="Process Explorer", url_path="processes")
+analytics = st.Page(lambda: render(pages.analytics), title="Performance Analytics", url_path="analytics")
+history = st.Page(lambda: render(pages.time_machine), title="Performance Time Machine", url_path="history")
 st.session_state["analytics_page"] = analytics
 st.session_state["history_page"] = history
-navigation = st.navigation([overview, explorer, analytics, history])
+navigation = st.navigation([overview, explorer, analytics, history], position="hidden")
+try:
+    open_alerts = database().counts()["open_alerts"]
+except (RuntimeError, OSError, sqlite3.Error):
+    open_alerts = 0  # no badge when history is unreadable; the pages report the error
 with st.sidebar:
-    st.divider()
-    if st.button("Alerts", icon=":material/notifications:", width="stretch"):
-        alerts()
-    if st.button("Settings", icon=":material/settings:", width="stretch"):
+    for key, page in (("nav_overview", overview), ("nav_explorer", explorer), ("nav_analytics", analytics), ("nav_history", history)):
+        active = navigation.title == page.title
+        with st.container(key="navon" if active else f"navoff_{key}"):
+            with st.container(key=key):
+                st.page_link(page, label=page.title)
+    st.html('<div class="pm-section">MONITORING &amp; CONTROL</div>')
+    with st.container(key="ctl_alerts_wrap"):
+        if st.button("Alerts", key="ctl_alerts", width="stretch"):
+            alerts()
+        if open_alerts:
+            st.html(f'<span class="pm-badge" title="{open_alerts} open alert{"s" if open_alerts != 1 else ""}">{open_alerts}</span>')
+    if st.button("Settings", key="ctl_settings", width="stretch"):
         settings()
-    if st.button("Collector Health", icon=":material/monitor_heart:", width="stretch"):
+    if st.button("Collector Health", key="ctl_health", width="stretch"):
         health()
-    if st.button("Exit PulseMetrics", icon=":material/power_settings_new:", width="stretch"):
+    if st.button("Exit PulseMetrics", key="ctl_exit", width="stretch"):
         exit_dialog()
-    st.caption("LOCAL BY DESIGN\n\nNative C collection · SQLite history\n\nPulseMetrics 2.0")
 navigation.run()

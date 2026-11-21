@@ -50,18 +50,41 @@ def lock_runtime(path):
     return handle
 
 
-def owns_listener(pid, port):
+def owns_listener(pid, port, job_handle=None):
+    """Return true only when the loopback listener belongs to this process or its Job."""
     library = C.WinDLL("iphlpapi", use_last_error=True)
     get_table = api(library, "GetExtendedTcpTable", W.DWORD, C.c_void_p, C.POINTER(W.DWORD), W.BOOL, W.ULONG, C.c_int, W.ULONG)
     size = W.DWORD()
-    get_table(None, C.byref(size), False, 2, 3, 0)
-    buffer = C.create_string_buffer(size.value)
-    if get_table(buffer, C.byref(size), False, 2, 3, 0):
+    result = get_table(None, C.byref(size), False, 2, 3, 0)
+    if size.value == 0:
         return False
+    buffer = C.create_string_buffer(size.value)
+    result = get_table(buffer, C.byref(size), False, 2, 3, 0)
+    if result:
+        return False
+
+    open_process = api(K, "OpenProcess", W.HANDLE, W.DWORD, W.BOOL, W.DWORD)
+    is_process_in_job = api(K, "IsProcessInJob", W.BOOL, W.HANDLE, W.HANDLE, C.POINTER(W.BOOL))
+    query_limited_information = 0x1000
+
     raw = buffer.raw
     count = struct.unpack_from("<I", raw)[0]
     for index in range(count):
         _, address, local_port, _, _, owner = struct.unpack_from("<6I", raw, 4 + index * 24)
-        if owner == pid and socket.ntohs(local_port & 0xFFFF) == port and address == 0x0100007F:
+        if socket.ntohs(local_port & 0xFFFF) != port or address != 0x0100007F:
+            continue
+        if owner == pid:
             return True
+        if job_handle is None:
+            continue
+
+        process = open_process(query_limited_information, False, owner)
+        if not process:
+            continue
+        try:
+            belongs = W.BOOL(False)
+            if is_process_in_job(process, job_handle, C.byref(belongs)) and belongs.value:
+                return True
+        finally:
+            close(process)
     return False

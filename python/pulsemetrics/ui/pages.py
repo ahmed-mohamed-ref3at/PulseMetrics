@@ -1,3 +1,4 @@
+import sqlite3
 import time
 from datetime import datetime, time as day_time, timezone
 
@@ -6,54 +7,133 @@ import plotly.graph_objects as go
 
 from pulsemetrics import ipc
 from pulsemetrics.analytics import compare_windows, memory_change, summaries
-from .components import CYAN, PURPLE, alert_list, chart, database, recent_range, status, timestamp, title, utc, value
+from .components import alert_list, bar_row, chart, chips, clock, database, health_html, health_items, ico, panel, recent_range, ring, status, system_drive, timestamp, title, utc, value
+from .theme import BLUE, GRID, ORANGE
+
+
+def committed_mean(rows, name):
+    """Observation-weighted mean of committed windows, or None when nothing was stored."""
+    chosen = [r for r in rows if r["name"] == name]
+    count = sum(r["sample_count"] for r in chosen)
+    return sum(r["sample_sum"] for r in chosen) / count if count else None
+
+
+def hardware_strip(system, drive):
+    """'This computer' strip: only values the native monitor / the operating system actually report."""
+    processors, total, used = system.get("logical_processors"), system.get("memory_total_bytes"), system.get("memory_used_bytes")
+    topology = system.get("cpu_topology_supported")
+    cpu_note = {True: "One processor group · CPU % measured", False: "Multiple processor groups · CPU % unavailable"}.get(topology, "Processor topology unavailable")
+    item = lambda head, sub: f'<div class="pm-hw-item"><div><b>{head}</b><span>{sub}</span></div></div>'
+    gib = lambda n: f"{n / 2**30:,.1f} GiB"
+    return '<div class="pm-hw">' + "".join([
+        '<div class="pm-hw-item pm-hw-main">' + ico("computer_monitor", 52) + '<div><b>This Computer</b><span>Windows PC · live Win32 sampling</span></div></div>',
+        '<div class="pm-hw-sep"></div>',
+        item(f"{processors:,} logical processors" if processors else "Logical processors unavailable", cpu_note),
+        item(f"{gib(total)} RAM" if total else "Physical memory unavailable", f"{gib(used)} in use" if used is not None else "Usage unavailable"),
+        item(f"{gib(drive['total'])} drive ({drive['label']})" if drive else "System drive unavailable",
+             f"{gib(drive['free'])} free · read live" if drive else "Disk usage could not be read"),
+    ]) + "</div>"
+
+
+ROW_CHARTS, ROW_BOTTOM, ROW_CARDS = 380, 350, 172  # fixed heights keep each row visually even
 
 
 def overview():
-    title("YOUR LOCAL PERFORMANCE WORKSPACE", "Overview", "A clear view of this computer. Live observations and committed history, shown separately.")
-    state, stale = status()
+    header = title("YOUR LOCAL PERFORMANCE WORKSPACE", "Overview", "Real-time monitoring of this computer, with committed history shown separately.")
+    state, stale = status(header)
     live, health = state["live"], state["collector"]
     system = live.get("system", {}) if not stale else {}
-    with st.container(horizontal=True):
-        st.metric("System CPU", value(system.get("cpu_percent"), "%"), border=True)
-        used = system.get("memory_used_bytes")
-        st.metric("Memory in use", value(used / 2**30 if used is not None else None, " GiB"), border=True)
-        st.metric("Processes discovered", str(live.get("discovered", 0)) if not stale else "Unavailable", border=True)
-        st.metric("Actively tracked", str(live.get("tracked", 0)) if not stale else "Unavailable", border=True)
-    st.caption("Live sample: " + timestamp(live.get("sampled_at_us")) + "  ·  Last database commit: " + timestamp(health.get("last_commit_us")))
     db = database()
-    sources = db.sources()
-    system_source = next((s for s in sources if s["kind"] == "system"), None)
-    rows = db.history(system_source["source_id"], *recent_range(1800)) if system_source else []
-    left, right = st.columns(2)
-    with left, st.container(border=True):
-        st.subheader("CPU over time", anchor=False)
-        st.caption("Last 30 minutes · last observed value per committed window")
-        chart(rows, "cpu.percent", "CPU", "%", key="overview_cpu")
-    with right, st.container(border=True):
-        st.subheader("Memory over time", anchor=False)
-        st.caption("Physical memory in use · GiB")
-        chart(rows, "memory.used", "Memory", "GiB", 2**30, key="overview_memory")
-    left, right = st.columns([1.2, 1])
-    with left, st.container(border=True):
-        st.subheader("Top tracked processes", anchor=False)
+    try:
+        sources = db.sources()
+        system_source = next((s for s in sources if s["kind"] == "system"), None)
+        rows = db.history(system_source["source_id"], *recent_range(1800)) if system_source else []
+        counts, recent, db_problem = db.counts(), db.alerts(), None
+    except sqlite3.Error as exc:
+        rows, counts, recent, db_problem = [], None, [], exc
+    if db_problem:
+        st.error(f"Stored history is unavailable: {db_problem}")
+    drive = system_drive()
+    st.html(hardware_strip(system, drive))
+    cpu, used, total, percent = system.get("cpu_percent"), system.get("memory_used_bytes"), system.get("memory_total_bytes"), system.get("memory_percent")
+    first, second, third, fourth = st.columns(4)
+    with first, st.container(border=True, height=ROW_CARDS, key="card_cpu"):
+        glyph, text, ring_slot = st.columns([1, 3, 2], vertical_alignment="center")
+        glyph.html(ico("cpu_chip_metric", 52))
+        mean = committed_mean(rows, "cpu.percent") if cpu is not None else None
+        text.metric("CPU Usage", value(cpu, "%"), delta=None if mean is None else f"{cpu - mean:+.1f} pp vs 30 min", delta_color="off", help="Difference from the observation-weighted mean of committed CPU windows in the last 30 minutes.")
+        if cpu is not None:
+            with ring_slot:
+                st.html(ring(cpu, f"System CPU {cpu:.1f} percent"))
+    with second, st.container(border=True, height=ROW_CARDS, key="card_memory"):
+        glyph, body = st.columns([1, 5], vertical_alignment="center")
+        glyph.html(ico("ram_metric", 52))
+        with body:
+            st.metric("Memory in use", value(used / 2**30 if used is not None else None, " GiB"))
+            if percent is not None and total:
+                st.html(bar_row(percent) + f'<div class="pm-sub">of {total / 2**30:,.1f} GiB physical memory</div>')
+            else:
+                st.html('<div class="pm-na">Physical memory total unavailable</div>')
+    with third, st.container(border=True, height=ROW_CARDS, key="card_disk"):
+        glyph, body = st.columns([1, 5], vertical_alignment="center")
+        glyph.html(ico("disk_metric", 52))
+        with body:
+            st.metric(f"Disk ({drive['label']})" if drive else "Disk", value(drive["used"] / 2**30, " GiB") if drive else "Unavailable")
+            if drive and drive["percent"] is not None:
+                st.html(bar_row(drive["percent"]) + f'<div class="pm-sub">of {drive["total"] / 2**30:,.1f} GiB · live reading, not stored</div>')
+            else:
+                st.html('<div class="pm-na">Disk usage could not be read</div>')
+    with fourth, st.container(border=True, height=ROW_CARDS, key="card_network"):
+        glyph, body = st.columns([1, 5], vertical_alignment="center")
+        glyph.html(ico("network_metric", 52))
+        with body:
+            st.metric("Network", "Not collected")
+            st.html('<div class="pm-na">The collector does not measure network throughput.</div>')
+    left, middle, right = st.columns([4, 4, 3])
+    with left, st.container(border=True, height=ROW_CHARTS):
+        st.html(panel(None, "CPU Usage", "Last 30 minutes"))
+        chart(rows, "cpu.percent", "CPU", "%", key="overview_cpu", height=270)
+    with middle, st.container(border=True, height=ROW_CHARTS):
+        st.html(panel(None, "Memory Usage", "Physical memory in use · GiB"))
+        chart(rows, "memory.used", "Memory", "GiB", 2**30, key="overview_memory", height=270)
+    with right, st.container(border=True, height=ROW_CHARTS):
+        st.html(panel(None, "PC Health & Insights"))
+        critical = any(a["closed_utc_us"] is None and a["severity"] == "critical" for a in recent)
+        st.html(health_html(health_items(state, stale, counts, critical)))
+    left, middle, right = st.columns([13, 11, 9])
+    with left, st.container(border=True, height=ROW_BOTTOM):
+        discovered, tracked = ("unavailable", "unavailable") if stale else (f"{live.get('discovered', 0):,}", f"{live.get('tracked', 0):,}")
+        st.html(panel(None, "Top Tracked Processes", f"{discovered} discovered · {tracked} tracked" + (" · snapshot truncated at 10,000" if live.get("truncated") and not stale else "")))
         top = [] if stale else live.get("top", [])
         if top:
-            st.dataframe([{"Process": r["name"], "PID": r["pid"], "CPU %": r["cpu_percent"], "Working set MiB": r["memory_bytes"] / 2**20 if r["memory_bytes"] is not None else None} for r in top], hide_index=True,
-                         column_config={"CPU %": st.column_config.NumberColumn(format="%.1f"), "Working set MiB": st.column_config.NumberColumn(format="%.1f")})
+            st.dataframe([{"Process": r["name"], "PID": r["pid"], "CPU %": r["cpu_percent"], "Working set MiB": r["memory_bytes"] / 2**20 if r["memory_bytes"] is not None else None} for r in top], hide_index=True, height=230,
+                         column_config={"CPU %": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%.1f%%"), "Working set MiB": st.column_config.NumberColumn(format="%.1f")})
         else:
             st.info("Track a process in Process Explorer to begin its personal history.")
-    with right, st.container(border=True):
-        st.subheader("Recent alerts", anchor=False)
-        alert_list(db.alerts(), 3)
+    with middle, st.container(border=True, height=ROW_BOTTOM):
+        st.html(panel(None, "Recent Alerts"))
+        alert_list(recent, 3)
+    with right, st.container(border=True, height=ROW_BOTTOM):
+        st.html(panel(None, "Performance Time Machine"))
+        st.caption("Go back in time, explore stored windows, and compare compatible windows.")
+        st.html('<div class="pm-timeline" aria-hidden="true"><i></i><i></i><i></i><i class="now"></i><i></i><i></i><i></i></div>')
+        if counts is not None:
+            st.html(chips([("Stored windows", f"{counts['windows']:,}"), ("Last commit", clock(health.get("last_commit_us")))]))
+        if "history_page" in st.session_state and st.button("Open Time Machine", type="primary", width="stretch"):
+            st.switch_page(st.session_state["history_page"])
+    st.caption("Live sample: " + timestamp(live.get("sampled_at_us")) + "  ·  Last database commit: " + timestamp(health.get("last_commit_us")))
     with st.container(horizontal=True):
         st.badge("Collector running" if health.get("state") == "running" else "Collector unavailable", color="green" if health.get("state") == "running" else "red")
         st.caption(f"Accepted {health.get('accepted', 0):,} · Rejected {health.get('rejected', 0):,} · Pending batches {health.get('pending_batches', 0)}/6 · Known dropped {health.get('known_dropped', 0):,}")
 
 
 def explorer():
-    title("DISCOVER · SELECT · FOLLOW", "Process Explorer", "Follow exact Windows process instances. Only selected processes are stored in history.")
-    state, stale = status()
+    header = title("DISCOVER · SELECT · FOLLOW", "Process Explorer", "Follow exact Windows process instances. Only selected processes are stored in history.")
+    state, stale = status(header)
+    age = state["live"].get("age_seconds")
+    st.html(chips([("Processes discovered", state["live"].get("discovered", 0) if not stale else "Unavailable"),
+                   ("Tracked", state["live"].get("tracked", 0) if not stale else "Unavailable"),
+                   ("Snapshot age", f"{age:.1f} s" if age is not None else "none yet")]))
     left, right = st.columns([2, 1])
     search = left.text_input("Search processes", placeholder="Name or PID", key="process_search")
     sort = right.selectbox("Sort by", ["CPU", "Memory", "Name", "PID"])
@@ -100,8 +180,8 @@ def explorer():
 
 
 def analytics():
-    title("FROM OBSERVATION TO UNDERSTANDING", "Performance Analytics", "Explore measured behavior, with exact units and a path back to every stored window.")
-    status()
+    header = title("FROM OBSERVATION TO UNDERSTANDING", "Performance Analytics", "Explore measured behavior, with exact units and a path back to every stored window.")
+    status(header)
     db = database()
     sources = db.sources()
     if not sources:
@@ -175,8 +255,8 @@ def analytics():
 
 
 def time_machine():
-    title("EVERY WINDOW HAS A STORY", "Performance Time Machine", "Revisit committed observations. Missing windows remain gaps; missing metrics remain unavailable.")
-    status()
+    header = title("EVERY WINDOW HAS A STORY", "Performance Time Machine", "Revisit committed observations. Missing windows remain gaps; missing metrics remain unavailable.")
+    status(header)
     db = database()
     target_id = st.session_state.pop("history_target", None)
     target = db.window_meta(target_id) if target_id else None
@@ -209,12 +289,12 @@ def time_machine():
     alerts = db.alerts()
     alert_windows = {e["first_window_id"] for e in alerts} | {e["last_window_id"] for e in alerts}
     figure = go.Figure(go.Scatter(x=[utc(w["end_utc_us"]) for w in windows], y=[w["metric_count"] for w in windows],
-                                mode="markers", customdata=ids, marker=dict(size=9, color=[CYAN if w["window_id"] in alert_windows else PURPLE for w in windows]),
+                                mode="markers", customdata=ids, marker=dict(size=9, color=[ORANGE if w["window_id"] in alert_windows else BLUE for w in windows]),
                                 hovertemplate="%{x|%d %b %H:%M:%S UTC}<br>%{y} observed series<br>Window %{customdata}<extra></extra>"))
     figure.update_layout(height=220, margin=dict(l=8, r=8, t=8, b=8), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                         font=dict(color="#D4DEF4"), xaxis=dict(title="Committed window end · UTC", gridcolor="#202C45"), yaxis=dict(title="Observed metric series", gridcolor="#202C45"))
+                         font=dict(color="#C9D6EE"), xaxis=dict(title="Committed window end · UTC", gridcolor=GRID, zeroline=False), yaxis=dict(title="Observed metric series", gridcolor=GRID, zeroline=False))
     selection = st.plotly_chart(figure, key="history_timeline", on_select="rerun", selection_mode="points", config={"displaylogo": False})
-    st.caption("Purple: stored window · Cyan: opening or latest evaluation of a recent alert. Points do not imply continuous coverage.")
+    st.caption("Blue: stored window · Orange: opening or latest evaluation of a recent alert. Points do not imply continuous coverage.")
     points = selection.selection.points
     if points:
         clicked = points[0].get("customdata")
